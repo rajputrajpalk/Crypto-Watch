@@ -1,0 +1,37 @@
+# Docker run steps (CryptoWatch)
+
+## 1) Prerequisites
+- Install Docker Desktop.
+- Ensure port 8000 is available.
+
+## 2) Build the image
+```bash
+docker build -t cryptowatch:latest .
+```
+
+## 3) Run the app container
+```bash
+docker run --rm -p 8000:8000 \
+  --name cryptowatch \
+  cryptowatch:latest
+```
+
+## 4) (Optional) Use Docker Compose with Redis
+If you want Redis-backed storage, run Redis alongside the app:
+
+```bash
+docker compose up --build
+```
+
+## 5) Open
+- Dashboard: http://localhost:8000/
+
+## 6) API endpoints
+- GET  /api/portfolio/
+- GET  /api/alerts/
+- POST /api/alerts/create/
+
+## Notes
+- The project will still start without Redis (it falls back to in-memory state).
+- Environment variables (if supported in your Dockerfile/compose) may override Redis host/port.
+

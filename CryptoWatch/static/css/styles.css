@@ -1,0 +1,125 @@
+/* CryptoWatch - Custom CSS (Green/Red/Blue/SkyBlue theme) */
+
+:root{
+  --cw-green:#22c55e;
+  --cw-red:#ef4444;
+  --cw-blue:#1d4ed8;
+  --cw-sky:#38bdf8;
+
+  --cw-bg:#f0f9ff; /* sky tint */
+  --cw-card:#ffffff;
+  --cw-text:#0f172a;
+  --cw-muted:#64748b;
+
+  --cw-border: rgba(56,189,248,0.25);
+  --cw-shadow: 0 10px 25px rgba(29,78,216,0.08);
+}
+
+html, body { height: 100%; }
+
+body{
+  background: radial-gradient(1200px 600px at 15% -10%, rgba(56,189,248,0.18), transparent 55%),
+              radial-gradient(900px 450px at 90% 10%, rgba(29,78,216,0.12), transparent 55%),
+              var(--cw-bg);
+  color: var(--cw-text);
+}
+
+/* Smooth page load */
+@keyframes cw-fade-up {
+  0%{ opacity:0; transform:translateY(10px); }
+  100%{ opacity:1; transform:translateY(0); }
+}
+
+.animate-in {
+  animation: cw-fade-up 600ms ease-out both;
+}
+
+/* Glowing header animation */
+@keyframes cw-glow {
+  0%{ box-shadow: 0 0 0 rgba(56,189,248,0.0); }
+  50%{ box-shadow: 0 0 35px rgba(56,189,248,0.35); }
+  100%{ box-shadow: 0 0 0 rgba(56,189,248,0.0); }
+}
+
+.cw-glow {
+  animation: cw-glow 2.8s ease-in-out infinite;
+}
+
+/* Subtle chart refresh pop */
+@keyframes cw-chart-pop {
+  0%{ opacity:0.75; transform: scale(0.99); }
+  100%{ opacity:1; transform: scale(1); }
+}
+
+.cw-chart-refresh{
+  animation: cw-chart-pop 250ms ease-out both;
+}
+
+/* Table row hover */
+.table-hover tbody tr{
+  transition: transform 120ms ease, background-color 120ms ease;
+}
+
+.table-hover tbody tr:hover{
+  transform: translateY(-1px);
+  background-color: rgba(56,189,248,0.12);
+}
+
+/* Status coloring for alert rows */
+.cw-alert-active{
+  color: var(--cw-blue);
+  font-weight: 600;
+}
+
+.cw-alert-triggered{
+  color: var(--cw-green);
+  font-weight: 700;
+}
+
+/* Pulse badge for active alerts */
+@keyframes cw-pulse {
+  0%, 100%{ opacity:1; transform: scale(1); }
+  50%{ opacity:0.82; transform: scale(1.02); }
+}
+
+.cw-badge-pulse{
+  animation: cw-pulse 1.4s ease-in-out infinite;
+}
+
+/* P&L colors for portfolio values */
+.cw-pnl-green{ color: var(--cw-green) !important; }
+.cw-pnl-red{ color: var(--cw-red) !important; }
+
+/* Buttons */
+.cw-btn-primary{
+  background: linear-gradient(90deg, var(--cw-sky), var(--cw-blue));
+  color: white;
+}
+
+.cw-btn-danger{
+  background: linear-gradient(90deg, var(--cw-red), #fb7185);
+  color: white;
+}
+
+/* Deactivate button styling */
+button[data-action='deactivate']{
+  border: 1px solid rgba(239,68,68,0.25);
+  color: var(--cw-red);
+}
+
+button[data-action='deactivate']:hover{
+  background: rgba(239,68,68,0.1);
+}
+
+/* Make action buttons consistent */
+.cw-action-btn{
+  padding: 6px 10px;
+  border-radius: 10px;
+  transition: transform 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.cw-action-btn:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(29,78,216,0.12);
+}
+
