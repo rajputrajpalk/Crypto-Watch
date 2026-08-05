@@ -168,6 +168,24 @@ class PortfolioRepository:
                     'value': total_value_at_epoch,
                 })
 
+        # Get coin_histories for supported symbols
+        coin_histories: Dict[str, List[Dict[str, Any]]] = {}
+        for sym in ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "DOT", "MATIC", "AVAX", "LTC"]:
+            rows = self.rh.client.zrevrange(self._z_hist_key(sym), 0, 199, withscores=True)
+            rows.reverse()
+            sym_points = []
+            for price_str, epoch_val in rows:
+                sym_points.append({
+                    'timestamp': datetime.fromtimestamp(float(epoch_val), tz=timezone.utc).isoformat(),
+                    'symbol': sym,
+                    'price': float(price_str),
+                })
+            coin_histories[sym] = sym_points
+
+        k_tx = self.rh.key('transactions', f'user:{self.user_id}')
+        tx_raw = self.rh.client.lrange(k_tx, 0, 99)
+        transactions = [json.loads(x) for x in tx_raw] if tx_raw else []
+
         return {
             'holdings': per_symbol,
             'totals': {
@@ -177,7 +195,60 @@ class PortfolioRepository:
                 'pnl_pct': overall_pnl_pct,
             },
             'price_history': chart_points,
+            'coin_histories': coin_histories,
+            'transactions': transactions,
         }
+
+    def execute_trade(self, symbol: str, action: str, quantity: float, price: float = 0.0) -> Dict[str, Any]:
+        if self._fallback is not None:
+            return self._fallback.execute_trade(symbol=symbol, action=action, quantity=quantity, price=price)
+
+        symbol = (symbol or '').strip().upper()
+        action = (action or '').strip().upper()
+        try:
+            quantity = float(quantity)
+            price = float(price)
+        except (ValueError, TypeError):
+            return {'status': 400, 'error': 'Invalid quantity or price numeric value'}
+
+        if not symbol or quantity <= 0 or action not in ('BUY', 'SELL', 'SOLD'):
+            return {'status': 400, 'error': 'Invalid trade parameters'}
+
+        if price <= 0.0:
+            latest = self.rh.client.zrevrange(self._z_hist_key(symbol), 0, 0, withscores=True)
+            price = float(latest[0][0]) if latest else 100.0
+
+        doc_raw = self.rh.client.hget(self.k_portfolio, symbol)
+        if doc_raw:
+            curr = json.loads(doc_raw)
+            old_qty = float(curr.get('quantity', 0.0))
+            old_avg = float(curr.get('avg_buy_price', 0.0))
+        else:
+            old_qty, old_avg = 0.0, 0.0
+
+        if action == 'BUY':
+            new_qty = old_qty + quantity
+            new_avg = ((old_qty * old_avg) + (quantity * price)) / new_qty if new_qty > 0 else price
+        else:
+            new_qty = max(0.0, old_qty - quantity)
+            new_avg = old_avg if new_qty > 0 else 0.0
+
+        self.upsert_holding(symbol, new_qty, new_avg)
+
+        trade_record = {
+            'id': f"{symbol}-{int(time.time()*1000)}",
+            'symbol': symbol,
+            'action': 'BUY' if action == 'BUY' else 'SOLD',
+            'quantity': quantity,
+            'price': price,
+            'total': quantity * price,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+        }
+        k_tx = self.rh.key('transactions', f'user:{self.user_id}')
+        self.rh.client.lpush(k_tx, json.dumps(trade_record))
+        self.rh.client.ltrim(k_tx, 0, 99)
+
+        return {'status': 200, 'message': f"Successfully executed {action} for {quantity} {symbol}"}
 
 
 
@@ -224,7 +295,7 @@ class AlertsRepository:
         alert_type = payload.get('alert_type')
 
 
-        if not symbol or target_price is None or alert_type not in ('above', 'below'):
+        if not symbol or target_price is None or alert_type not in ('above', 'below', 'increase', 'decrease'):
             return {'status': 400, 'error': 'Invalid payload'}
 
         doc = {
@@ -250,6 +321,7 @@ class AlertsRepository:
         if deleted:
             return {'status': 200, 'message': 'Alert deactivated'}
         return {'status': 400, 'error': 'Alert not found'}
+
 
 
 

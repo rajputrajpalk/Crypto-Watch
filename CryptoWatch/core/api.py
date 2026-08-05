@@ -12,6 +12,7 @@ from .serializers import (
     AlertCreateRequestSerializer,
     AlertSerializer,
     PortfolioStateSerializer,
+    TradeRequestSerializer,
 )
 
 
@@ -23,6 +24,35 @@ class PortfolioStateAPIView(APIView):
     def get(self, request: Request) -> Response:
         data = PortfolioRepository().get_portfolio_snapshot()
         return Response(PortfolioStateSerializer(data).data)
+
+
+class TradeAPIView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request: Request) -> Response:
+        serializer = TradeRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        payload: Dict[str, Any] = serializer.validated_data
+        result = PortfolioRepository().execute_trade(
+            symbol=payload['symbol'],
+            action=payload['action'],
+            quantity=payload['quantity'],
+            price=payload.get('price', 0.0),
+        )
+        if result.get('status', 200) not in (200, 201):
+            return Response({'error': result.get('error', 'Trade failed')}, status=400)
+
+        data = PortfolioRepository().get_portfolio_snapshot()
+        return Response(
+            {
+                'message': result.get('message', 'Trade executed successfully'),
+                'portfolio': PortfolioStateSerializer(data).data,
+            },
+            status=200,
+        )
 
 
 class AlertsAPIView(APIView):

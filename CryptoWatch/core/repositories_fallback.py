@@ -39,15 +39,14 @@ class InMemoryPortfolioRepository:
     def __init__(self):
         self._lock = threading.Lock()
         self.user_id = 55
-        self._portfolio = InMemoryPortfolioState()
-        self._history = InMemoryHistoryState()
+        self._portfolio = _SHARED_PORTFOLIO_STATE
+        self._history = _SHARED_HISTORY_STATE
         self._clock = InMemoryClock()
 
     def log_price(self, symbol: str, price: float, epoch: float) -> None:
         with self._lock:
             rows = self._history.history.setdefault(symbol, [])
             rows.append((float(epoch), float(price)))
-            # keep last ~1000
             if len(rows) > 1001:
                 rows[:] = rows[-1001:]
 
@@ -57,6 +56,53 @@ class InMemoryPortfolioRepository:
                 'quantity': float(quantity),
                 'avg_buy_price': float(avg_buy_price),
             }
+
+    def execute_trade(self, symbol: str, action: str, quantity: float, price: float = 0.0) -> Dict[str, Any]:
+        symbol = (symbol or '').strip().upper()
+        action = (action or '').strip().upper()
+        try:
+            quantity = float(quantity)
+            price = float(price)
+        except (ValueError, TypeError):
+            return {'status': 400, 'error': 'Invalid quantity or price numeric value'}
+
+        if not symbol or quantity <= 0 or action not in ('BUY', 'SELL', 'SOLD'):
+            return {'status': 400, 'error': 'Invalid trade parameters'}
+
+        with self._lock:
+            if price <= 0.0:
+                if symbol in self._history.history and self._history.history[symbol]:
+                    _, price = sorted(self._history.history[symbol], key=lambda x: x[0])[-1]
+                else:
+                    price = 100.0
+
+            curr = self._portfolio.holdings.get(symbol, {'quantity': 0.0, 'avg_buy_price': 0.0})
+            old_qty = float(curr.get('quantity', 0.0))
+            old_avg = float(curr.get('avg_buy_price', 0.0))
+
+            if action == 'BUY':
+                new_qty = old_qty + quantity
+                new_avg = ((old_qty * old_avg) + (quantity * price)) / new_qty if new_qty > 0 else price
+                self._portfolio.holdings[symbol] = {'quantity': new_qty, 'avg_buy_price': new_avg}
+            else:
+                new_qty = max(0.0, old_qty - quantity)
+                new_avg = old_avg if new_qty > 0 else 0.0
+                self._portfolio.holdings[symbol] = {'quantity': new_qty, 'avg_buy_price': new_avg}
+
+            trade_record = {
+                'id': f"{symbol}-{int(time.time()*1000)}",
+                'symbol': symbol,
+                'action': 'BUY' if action == 'BUY' else 'SOLD',
+                'quantity': quantity,
+                'price': price,
+                'total': quantity * price,
+                'timestamp': self._clock.now_iso(),
+            }
+            _SHARED_TRANSACTIONS.insert(0, trade_record)
+            if len(_SHARED_TRANSACTIONS) > 100:
+                _SHARED_TRANSACTIONS[:] = _SHARED_TRANSACTIONS[:100]
+
+        return {'status': 200, 'message': f"Successfully executed {action} for {quantity} {symbol}"}
 
     def get_portfolio_snapshot(self) -> Dict[str, Any]:
         with self._lock:
@@ -96,9 +142,10 @@ class InMemoryPortfolioRepository:
             overall_pnl_abs = total_value - total_cost
             overall_pnl_pct = (overall_pnl_abs / total_cost * 100.0) if total_cost else 0.0
 
-            # chart points: use last 200 history points from first holding symbol
             chart_points: List[Dict[str, Any]] = []
             any_symbol: Optional[str] = next(iter(holdings.keys()), None)
+            if not any_symbol and "BTC" in self._history.history:
+                any_symbol = "BTC"
             if any_symbol and any_symbol in self._history.history:
                 rows = sorted(self._history.history[any_symbol], key=lambda x: x[0])[-200:]
                 for epoch, price in rows:
@@ -107,6 +154,18 @@ class InMemoryPortfolioRepository:
                         'symbol': any_symbol,
                         'price': float(price),
                     })
+
+            coin_histories: Dict[str, List[Dict[str, Any]]] = {}
+            for sym, points in self._history.history.items():
+                rows = sorted(points, key=lambda x: x[0])[-200:]
+                sym_points = []
+                for epoch, price in rows:
+                    sym_points.append({
+                        'timestamp': datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat(),
+                        'symbol': sym,
+                        'price': float(price),
+                    })
+                coin_histories[sym] = sym_points
 
             return {
                 'holdings': per_symbol,
@@ -117,6 +176,8 @@ class InMemoryPortfolioRepository:
                     'pnl_pct': overall_pnl_pct,
                 },
                 'price_history': chart_points,
+                'coin_histories': coin_histories,
+                'transactions': list(_SHARED_TRANSACTIONS),
             }
 
 
@@ -126,8 +187,7 @@ class InMemoryAlertsRepository:
     def __init__(self):
         self._lock = threading.Lock()
         self.user_id = 55
-        # symbol -> doc
-        self._alerts: Dict[str, Dict[str, Any]] = {}
+        self._alerts: Dict[str, Dict[str, Any]] = _SHARED_ALERTS_STATE
 
     def list_alerts(self) -> Dict[str, Any]:
         with self._lock:
@@ -147,7 +207,7 @@ class InMemoryAlertsRepository:
         target_price = payload.get('target_price')
         alert_type = payload.get('alert_type')
 
-        if not symbol or target_price is None or alert_type not in ('above', 'below'):
+        if not symbol or target_price is None or alert_type not in ('above', 'below', 'increase', 'decrease'):
             return {'status': 400, 'error': 'Invalid payload'}
 
         doc = {
@@ -170,5 +230,12 @@ class InMemoryAlertsRepository:
                 return {'status': 400, 'error': 'Alert not found'}
             del self._alerts[symbol]
             return {'status': 200, 'message': 'Alert deactivated'}
+
+
+_SHARED_PORTFOLIO_STATE = InMemoryPortfolioState()
+_SHARED_HISTORY_STATE = InMemoryHistoryState()
+_SHARED_ALERTS_STATE: Dict[str, Dict[str, Any]] = {}
+_SHARED_TRANSACTIONS: List[Dict[str, Any]] = []
+
 
 

@@ -67,7 +67,13 @@ class PriceEngine:
                     alert_type = alert['alert_type']
                     current_price = float(current_prices.get(sym, 0.0))
 
-                    crossed = (current_price >= target) if alert_type == 'above' else (current_price <= target)
+                    if alert_type in ('above', 'increase'):
+                        crossed = current_price >= target
+                    elif alert_type in ('below', 'decrease'):
+                        crossed = current_price <= target
+                    else:
+                        crossed = False
+
                     if crossed:
                         self.repo_alerts.mark_triggered(symbol=sym, triggered_at=now_iso)
 

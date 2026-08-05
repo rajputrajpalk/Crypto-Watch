@@ -25,12 +25,21 @@ class PortfolioStateSerializer(serializers.Serializer):
     holdings = HoldingSerializer(many=True)
     totals = PortfolioTotalsSerializer()
     price_history = serializers.ListField(child=serializers.DictField())
+    coin_histories = serializers.DictField(child=serializers.ListField(child=serializers.DictField()), required=False)
+    transactions = serializers.ListField(child=serializers.DictField(), required=False)
+
+
+class TradeRequestSerializer(serializers.Serializer):
+    symbol = serializers.CharField()
+    action = serializers.ChoiceField(choices=['BUY', 'SELL', 'SOLD', 'buy', 'sell', 'sold'])
+    quantity = serializers.FloatField()
+    price = serializers.FloatField(required=False, default=0.0)
 
 
 class AlertSerializer(serializers.Serializer):
     symbol = serializers.CharField()
     target_price = serializers.FloatField()
-    alert_type = serializers.ChoiceField(choices=['above', 'below'])
+    alert_type = serializers.ChoiceField(choices=['above', 'below', 'increase', 'decrease'])
     is_triggered = serializers.BooleanField()
     created_at = serializers.CharField(allow_null=True)
     triggered_at = serializers.CharField(allow_null=True)
@@ -39,5 +48,5 @@ class AlertSerializer(serializers.Serializer):
 class AlertCreateRequestSerializer(serializers.Serializer):
     symbol = serializers.CharField()
     target_price = serializers.FloatField()
-    alert_type = serializers.ChoiceField(choices=['above', 'below'])
+    alert_type = serializers.ChoiceField(choices=['above', 'below', 'increase', 'decrease'])
 
