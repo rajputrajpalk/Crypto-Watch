@@ -4,918 +4,945 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CryptoWatch — Price Tracker & Trading Dashboard</title>
+  <title>CryptoWatch — Cryptocurrency Portfolio & Real-Time Alert Tracker</title>
+  
+  <!-- Tailwind CSS & Chart.js -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link rel="stylesheet" href="{% static 'css/styles.css' %}">
-  <style>
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(-8px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
-    .glass-card {
-      background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: blur(10px);
-    }
-  </style>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 </head>
-<body class="bg-slate-100 text-slate-800 min-h-screen">
+<body class="bg-slate-950 text-slate-100 min-h-screen font-['Inter',sans-serif] antialiased selection:bg-indigo-500 selection:text-white">
 
   <!-- Floating Toast Notification -->
-  <div id="toast" class="fixed top-4 right-4 z-50 hidden max-w-sm p-4 rounded-xl shadow-lg border text-sm font-medium animate-fade-in transition-all">
+  <div id="toast" class="fixed top-5 right-5 z-50 hidden max-w-md p-4 rounded-xl shadow-2xl border backdrop-blur-md transition-all duration-300 transform translate-y-0 text-sm font-medium">
     <div class="flex items-center justify-between gap-3">
-      <span id="toastMsg"></span>
-      <button onclick="hideToast()" class="text-slate-400 hover:text-slate-600 font-bold">&times;</button>
+      <div class="flex items-center gap-2">
+        <span id="toastIcon"></span>
+        <span id="toastMsg" class="text-slate-200"></span>
+      </div>
+      <button onclick="hideToast()" class="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
     </div>
   </div>
 
   <div class="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
-    <!-- Header -->
-    <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white rounded-2xl shadow-sm p-6 border border-slate-200/80">
-      <div>
-        <div class="flex items-center gap-3">
-          <span class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
-          <h1 class="text-3xl font-extrabold tracking-tight text-slate-900">CryptoWatch <span class="text-indigo-600 text-xl font-semibold">Pro</span></h1>
+
+    <!-- Top Navigation / Header -->
+    <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900/80 border border-slate-800 rounded-2xl p-5 md:p-6 shadow-xl backdrop-blur-sm">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 font-bold text-white text-lg">
+          CW
         </div>
-        <p class="text-slate-500 text-sm mt-1">Live crypto price tracking, custom alert direction filter, and instant Buy / Sold order execution.</p>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-2xl font-extrabold tracking-tight text-white">CryptoWatch</h1>
+            <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 uppercase tracking-wider">Terminal</span>
+          </div>
+          <p class="text-slate-400 text-xs mt-0.5">Real-time cryptocurrency valuation, position tracking, and automated threshold alerts.</p>
+        </div>
       </div>
-      <div class="flex flex-wrap items-center gap-3">
-        <div class="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-medium text-slate-600">
-          Feed: <span class="font-semibold text-indigo-600">Live Mock (Every 5s)</span>
+
+      <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+          <span class="w-2 h-2 rounded-full bg-emerald-500 -ml-4"></span>
+          <span>Feed: <strong class="text-emerald-400">Live 5s Tick</strong></span>
         </div>
-        <div class="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-medium text-slate-600">
-          Last Sync: <span id="live_prices_last_update" class="font-semibold text-slate-800">-</span>
+
+        <div class="px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300 font-mono">
+          Last Sync: <span id="last_sync_time" class="text-slate-100 font-bold">-</span>
         </div>
-        <button onclick="refreshAll()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition">
-          ↻ Refresh Now
+
+        <button onclick="refreshAll()" class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          Sync Now
         </button>
       </div>
     </header>
 
-    <!-- Top Section: Portfolio Summary & Interactive Chart with Filters -->
+    <!-- Top Grid: Portfolio Metric Cards & Interactive Chart -->
     <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      
-      <!-- Portfolio Summary & Holdings (4 columns on lg) -->
-      <div class="lg:col-span-4 bg-white rounded-2xl shadow-sm p-5 border border-slate-200/80 flex flex-col justify-between">
-        <div>
+
+      <!-- Left Column: Portfolio Metrics & Holdings (4 cols) -->
+      <div class="lg:col-span-4 flex flex-col gap-5">
+
+        <!-- Portfolio Stats Summary -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
           <div class="flex items-center justify-between mb-4">
-            <h2 class="text-lg font-bold text-slate-900">Portfolio Status</h2>
-            <span id="pnl_badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600">-</span>
+            <h2 class="text-sm font-bold text-slate-300 uppercase tracking-wider">Portfolio Valuation</h2>
+            <span id="pnl_badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-800 text-slate-400 border border-slate-700">Loading...</span>
           </div>
 
           <div class="grid grid-cols-2 gap-3 text-sm">
-            <div class="p-3 rounded-xl bg-slate-50 border border-slate-100">
+            <div class="p-3.5 rounded-xl bg-slate-800/50 border border-slate-800">
               <div class="text-slate-400 text-xs font-medium">Total Cost</div>
-              <div id="total_cost" class="text-lg font-bold text-slate-800 mt-0.5">$0.00</div>
+              <div id="total_cost" class="text-lg font-bold text-white font-mono mt-1">$0.00</div>
             </div>
-            <div class="p-3 rounded-xl bg-slate-50 border border-slate-100">
-              <div class="text-slate-400 text-xs font-medium">Total Value</div>
-              <div id="total_value" class="text-lg font-bold text-slate-800 mt-0.5">$0.00</div>
+            <div class="p-3.5 rounded-xl bg-slate-800/50 border border-slate-800">
+              <div class="text-slate-400 text-xs font-medium">Market Value</div>
+              <div id="total_value" class="text-lg font-bold text-white font-mono mt-1">$0.00</div>
             </div>
-            <div class="p-3 rounded-xl bg-slate-50 border border-slate-100">
-              <div class="text-slate-400 text-xs font-medium">P&L (Abs)</div>
-              <div id="pnl_abs" class="text-lg font-bold text-slate-800 mt-0.5">$0.00</div>
+            <div class="p-3.5 rounded-xl bg-slate-800/50 border border-slate-800">
+              <div class="text-slate-400 text-xs font-medium">Net Profit / Loss</div>
+              <div id="pnl_abs" class="text-lg font-bold text-white font-mono mt-1">$0.00</div>
             </div>
-            <div class="p-3 rounded-xl bg-slate-50 border border-slate-100">
-              <div class="text-slate-400 text-xs font-medium">P&L (%)</div>
-              <div id="pnl_pct" class="text-lg font-bold text-slate-800 mt-0.5">0.00%</div>
+            <div class="p-3.5 rounded-xl bg-slate-800/50 border border-slate-800">
+              <div class="text-slate-400 text-xs font-medium">P&L Return</div>
+              <div id="pnl_pct" class="text-lg font-bold text-white font-mono mt-1">0.00%</div>
             </div>
           </div>
+        </div>
 
-          <div class="mt-5">
-            <div class="flex items-center justify-between mb-2">
-              <h3 class="font-bold text-slate-800 text-sm">Your Holdings</h3>
-              <span id="holdings_count" class="text-xs text-slate-400">0 coins</span>
+        <!-- Active Holdings Card -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl flex-1 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-sm font-bold text-slate-300 uppercase tracking-wider">Your Asset Holdings</h3>
+              <span id="holdings_count" class="text-xs text-slate-400 font-mono">0 assets</span>
             </div>
-            <div class="overflow-x-auto max-h-56 overflow-y-auto">
-              <table class="min-w-full text-xs">
-                <thead class="text-left text-slate-400 border-b border-slate-100 sticky top-0 bg-white">
+
+            <div class="overflow-x-auto max-h-56 overflow-y-auto custom-scrollbar">
+              <table class="w-full text-xs">
+                <thead class="text-left text-slate-400 border-b border-slate-800 sticky top-0 bg-slate-900/95 backdrop-blur-sm">
                   <tr>
-                    <th class="py-2 font-semibold">Coin</th>
-                    <th class="py-2 font-semibold">Qty</th>
-                    <th class="py-2 font-semibold">Avg / Cur</th>
+                    <th class="py-2 font-semibold">Asset</th>
+                    <th class="py-2 font-semibold">Quantity</th>
+                    <th class="py-2 font-semibold">Avg / Current</th>
                     <th class="py-2 font-semibold">P&L</th>
                     <th class="py-2 text-right font-semibold">Trade</th>
                   </tr>
                 </thead>
-                <tbody id="holdings" class="divide-y divide-slate-100">
-                  <tr><td colspan="5" class="py-4 text-center text-slate-400">No holdings yet</td></tr>
+                <tbody id="holdings_tbody" class="divide-y divide-slate-800/60 font-mono">
+                  <tr><td colspan="5" class="py-6 text-center text-slate-500 font-sans">No holdings yet. Buy assets below to start trading.</td></tr>
                 </tbody>
               </table>
             </div>
           </div>
+
+          <div class="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-500 flex items-center justify-between">
+            <span>Click <strong>+ Buy</strong> or <strong>- Sell</strong> to quick-trade.</span>
+            <span class="text-indigo-400 font-medium">Zero Demo Fees</span>
+          </div>
         </div>
 
-        <div class="mt-4 pt-3 border-t border-slate-100 text-center">
-          <p class="text-xs text-slate-400">Use the Buy/Sold panel below to trade any coin.</p>
-        </div>
       </div>
 
-      <!-- Interactive Chart with Company, Duration & Increase/Decrease Filters (8 columns on lg) -->
-      <div class="lg:col-span-8 bg-white rounded-2xl shadow-sm p-5 border border-slate-200/80 flex flex-col justify-between">
+      <!-- Right Column: Interactive Dynamic Line Chart (8 cols) -->
+      <div class="lg:col-span-8 bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between">
         <div>
-          <!-- Chart Header & Interactive Filter Toolbar -->
-          <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-100">
+          <!-- Chart Controls Toolbar -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-4 border-b border-slate-800">
             <div>
-              <h2 class="text-lg font-bold text-slate-900">Live Value & Direction Chart</h2>
-              <p class="text-slate-500 text-xs">Filter by company, duration, and analyze price increase / decrease over time.</p>
+              <h2 class="text-sm font-bold text-slate-300 uppercase tracking-wider">Live Valuation & Price Chart</h2>
+              <p class="text-slate-400 text-xs">Interactive timeseries with real-time direction filtering.</p>
             </div>
 
-            <!-- Filter Controls -->
-            <div class="flex flex-wrap items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200/80 text-xs">
-              <!-- Which Company Filter -->
-              <div class="flex items-center gap-1">
-                <span class="text-slate-500 font-medium">Company:</span>
-                <select id="chartSymbolFilter" onchange="updateChartDisplay()" class="bg-white border border-slate-200 rounded-lg px-2 py-1 font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="ALL">TOTAL (Portfolio Value)</option>
-                  <option value="BTC">BTC - Bitcoin</option>
-                  <option value="ETH">ETH - Ethereum</option>
-                  <option value="SOL">SOL - Solana</option>
-                  <option value="XRP">XRP - Ripple</option>
-                  <option value="ADA">ADA - Cardano</option>
-                  <option value="DOGE">DOGE - Dogecoin</option>
-                  <option value="DOT">DOT - Polkadot</option>
-                  <option value="MATIC">MATIC - Polygon</option>
-                  <option value="AVAX">AVAX - Avalanche</option>
-                  <option value="LTC">LTC - Litecoin</option>
-                </select>
-              </div>
+            <div class="flex flex-wrap items-center gap-2 bg-slate-950/60 p-1.5 rounded-xl border border-slate-800 text-xs">
+              <!-- Asset Selector -->
+              <select id="chartSymbol" onchange="renderChart()" class="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1 font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <option value="ALL">Total Portfolio ($)</option>
+                <!-- Populated dynamically via JS -->
+              </select>
 
-              <!-- Duration of Filter -->
-              <div class="flex items-center gap-1">
-                <span class="text-slate-500 font-medium">Duration:</span>
-                <select id="chartDurationFilter" onchange="updateChartDisplay()" class="bg-white border border-slate-200 rounded-lg px-2 py-1 font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="200">All Time (Max)</option>
-                  <option value="60">Last 60 ticks</option>
-                  <option value="30">Last 30 ticks</option>
-                  <option value="15">Last 15 ticks</option>
-                  <option value="5">Last 5 ticks</option>
-                </select>
-              </div>
+              <!-- Duration Selector -->
+              <select id="chartDuration" onchange="renderChart()" class="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2 py-1 font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <option value="200">Max (200 ticks)</option>
+                <option value="60">Last 60 ticks</option>
+                <option value="30">Last 30 ticks</option>
+                <option value="10">Last 10 ticks</option>
+              </select>
 
-              <!-- Increase / Decrease Filter -->
-              <div class="flex items-center gap-1">
-                <span class="text-slate-500 font-medium">Filter:</span>
-                <select id="chartDirectionFilter" onchange="updateChartDisplay()" class="bg-white border border-slate-200 rounded-lg px-2 py-1 font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="ALL">All Movements</option>
-                  <option value="INCREASE">📈 Increase Only</option>
-                  <option value="DECREASE">📉 Decrease Only</option>
-                </select>
-              </div>
+              <!-- Direction Trend Filter -->
+              <select id="chartDirection" onchange="renderChart()" class="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2 py-1 font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <option value="ALL">All Movements</option>
+                <option value="INCREASE">📈 Increase Only</option>
+                <option value="DECREASE">📉 Decrease Only</option>
+              </select>
 
-              <!-- Custom Reference Value Input -->
-              <div class="flex items-center gap-1">
-                <input type="number" step="any" id="chartRefValue" oninput="updateChartDisplay()" placeholder="Target ref price..." class="w-28 bg-white border border-slate-200 rounded-lg px-2 py-1 font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              </div>
+              <!-- Reference Threshold -->
+              <input type="number" step="any" id="chartRefPrice" oninput="renderChart()" placeholder="Ref threshold $" class="w-28 bg-slate-800 border border-slate-700 text-slate-200 placeholder-slate-500 rounded-lg px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500" />
             </div>
           </div>
 
-          <!-- Chart Status & Stat Badges -->
-          <div class="flex flex-wrap items-center justify-between gap-3 mb-3 bg-slate-50/70 px-4 py-2.5 rounded-xl border border-slate-100 text-xs">
-            <div class="flex items-center gap-4">
+          <!-- Chart Metric Indicators -->
+          <div class="flex flex-wrap items-center justify-between gap-3 mb-4 bg-slate-950/40 px-4 py-2.5 rounded-xl border border-slate-800/80 text-xs font-mono">
+            <div class="flex items-center gap-6">
               <div>
-                <span class="text-slate-400">Current Value:</span>
-                <span id="chart_current_val" class="font-bold text-slate-800 text-sm ml-1">-</span>
+                <span class="text-slate-500">Current:</span>
+                <span id="chart_current_val" class="font-bold text-white ml-1 text-sm">$0.00</span>
               </div>
               <div>
-                <span class="text-slate-400">Interval Change:</span>
-                <span id="chart_period_change" class="font-bold ml-1">-</span>
+                <span class="text-slate-500">Net Period Shift:</span>
+                <span id="chart_period_change" class="font-bold ml-1">$0.00 (0.00%)</span>
               </div>
             </div>
-            <div class="flex items-center gap-2">
-              <span id="chart_direction_badge" class="px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider text-[10px] bg-slate-200 text-slate-700">NEUTRAL</span>
-              <span id="chart_ref_badge" class="px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider text-[10px] hidden">REF STATUS</span>
+            <div class="flex items-center gap-2 font-sans">
+              <span id="chart_direction_badge" class="px-2.5 py-0.5 rounded-full font-bold text-[10px] uppercase tracking-wider bg-slate-800 text-slate-400">Neutral</span>
+              <span id="chart_ref_badge" class="px-2.5 py-0.5 rounded-full font-bold text-[10px] uppercase tracking-wider hidden">Ref Status</span>
             </div>
           </div>
 
-          <!-- Canvas Container -->
-          <div class="h-72 w-full">
-            <canvas id="chart"></canvas>
+          <!-- Chart.js Canvas -->
+          <div class="h-72 w-full relative">
+            <canvas id="mainChart"></canvas>
           </div>
         </div>
 
         <div class="mt-3 text-right">
-          <span class="text-[11px] text-slate-400">Values update every 5 seconds with random market perturbations.</span>
+          <span class="text-[11px] text-slate-500 font-mono">Data refreshed asynchronously via DRF REST endpoints.</span>
         </div>
       </div>
+
     </section>
 
-    <!-- Middle Section: Buy / Sold Order Execution & Alert Settings (2 columns) -->
+    <!-- Middle Grid: Instant Trade Order Execution & Price Alert Hub -->
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      
-      <!-- Card 1: Buy or Sold Option (Instant Crypto Trade) -->
-      <div class="bg-white rounded-2xl shadow-sm p-6 border border-slate-200/80 flex flex-col justify-between">
+
+      <!-- Card 1: Trade Order Execution Hub -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
         <div>
           <div class="flex items-center justify-between mb-4">
             <div>
-              <h2 class="text-lg font-bold text-slate-900">Buy or Sold Option (Trade)</h2>
-              <p class="text-slate-500 text-xs">Execute instant Buy or Sold (Sell) orders for any crypto company.</p>
+              <h2 class="text-base font-bold text-white">Execute Trade Order</h2>
+              <p class="text-slate-400 text-xs">Simulate instant Buy or Sell market orders.</p>
             </div>
-            <span class="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-bold text-xs">LIVE TRADING</span>
+            <span class="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold text-xs">TRADING READY</span>
           </div>
 
-          <form id="tradeForm" onsubmit="executeTrade(event)" class="space-y-4">
-            <!-- Company & Action selector -->
+          <form id="tradeForm" onsubmit="handleTradeSubmit(event)" class="space-y-4">
             <div class="grid grid-cols-2 gap-4">
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Which Company (Coin)</label>
-                <select name="symbol" id="tradeSymbol" onchange="syncTradePrice()" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="BTC">BTC - Bitcoin</option>
-                  <option value="ETH">ETH - Ethereum</option>
-                  <option value="SOL">SOL - Solana</option>
-                  <option value="XRP">XRP - Ripple</option>
-                  <option value="ADA">ADA - Cardano</option>
-                  <option value="DOGE">DOGE - Dogecoin</option>
-                  <option value="DOT">DOT - Polkadot</option>
-                  <option value="MATIC">MATIC - Polygon</option>
-                  <option value="AVAX">AVAX - Avalanche</option>
-                  <option value="LTC">LTC - Litecoin</option>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Select Asset</label>
+                <select name="symbol" id="tradeSymbol" onchange="syncTradePrice()" class="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <!-- Options populated dynamically -->
                 </select>
               </div>
 
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Buy or Sold Option</label>
-                <div class="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl">
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Order Type</label>
+                <div class="grid grid-cols-2 gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
                   <label class="cursor-pointer text-center">
                     <input type="radio" name="action" value="BUY" checked class="peer sr-only" />
-                    <div class="py-1.5 rounded-lg text-xs font-bold text-slate-600 peer-checked:bg-emerald-600 peer-checked:text-white transition">BUY</div>
+                    <div class="py-1.5 rounded-lg text-xs font-bold text-slate-400 peer-checked:bg-emerald-600 peer-checked:text-white transition-all">BUY</div>
                   </label>
                   <label class="cursor-pointer text-center">
                     <input type="radio" name="action" value="SOLD" class="peer sr-only" />
-                    <div class="py-1.5 rounded-lg text-xs font-bold text-slate-600 peer-checked:bg-rose-600 peer-checked:text-white transition">SOLD / SELL</div>
+                    <div class="py-1.5 rounded-lg text-xs font-bold text-slate-400 peer-checked:bg-rose-600 peer-checked:text-white transition-all">SELL</div>
                   </label>
                 </div>
               </div>
             </div>
 
-            <!-- Quantity & Price -->
             <div class="grid grid-cols-2 gap-4">
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Quantity</label>
-                <input type="number" step="any" min="0.0001" name="quantity" value="1.0" required class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Quantity</label>
+                <input type="number" step="any" min="0.0001" name="quantity" value="1.0" required class="w-full bg-slate-800 border border-slate-700 text-white font-mono rounded-xl px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
 
               <div>
                 <div class="flex items-center justify-between mb-1">
-                  <label class="block text-xs font-semibold text-slate-600">Price ($)</label>
-                  <button type="button" onclick="syncTradePrice()" class="text-[10px] font-bold text-indigo-600 hover:underline">Use Live</button>
+                  <label class="block text-xs font-semibold text-slate-400">Price ($)</label>
+                  <button type="button" onclick="syncTradePrice()" class="text-[11px] font-semibold text-indigo-400 hover:text-indigo-300">Use Live Price</button>
                 </div>
-                <input type="number" step="any" name="price" id="tradePriceInput" placeholder="Live Price" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                <input type="number" step="any" name="price" id="tradePriceInput" placeholder="Live Price" class="w-full bg-slate-800 border border-slate-700 text-white font-mono rounded-xl px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
             </div>
 
-            <button type="submit" class="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-sm shadow-sm transition">
+            <button type="submit" id="tradeSubmitBtn" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 transition-all">
               Execute Order
             </button>
           </form>
         </div>
 
-        <div class="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-400 flex items-center justify-between">
-          <span>Orders instantly update your Holdings and Portfolio P&L.</span>
-          <span class="text-indigo-600 font-semibold">0% Demo Fee</span>
+        <div class="mt-4 pt-3 border-t border-slate-800 text-xs text-slate-500 flex items-center justify-between">
+          <span>Positions update live in your portfolio upon execution.</span>
+          <span class="text-emerald-400 font-semibold font-mono">Instant Fill</span>
         </div>
       </div>
 
-      <!-- Card 2: Custom Alert & Value Increase / Decrease Control -->
-      <div class="bg-white rounded-2xl shadow-sm p-6 border border-slate-200/80 flex flex-col justify-between">
+      <!-- Card 2: Price Alert Configuration Hub -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
         <div>
           <div class="flex items-center justify-between mb-4">
             <div>
-              <h2 class="text-lg font-bold text-slate-900">Set Company Alert & Direction</h2>
-              <p class="text-slate-500 text-xs">Trigger alerts when any crypto value increases or decreases past target.</p>
+              <h2 class="text-base font-bold text-white">Create Price Alert</h2>
+              <p class="text-slate-400 text-xs">Set background threshold triggers for any cryptocurrency.</p>
             </div>
-            <span class="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-bold text-xs">AUTO MONITOR</span>
+            <span class="px-2.5 py-1 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-bold text-xs">AUTO ENGINE</span>
           </div>
 
-          <form id="createAlertForm" onsubmit="createAlert(event)" class="space-y-4">
+          <form id="createAlertForm" onsubmit="handleAlertSubmit(event)" class="space-y-4">
             <div class="grid grid-cols-3 gap-3">
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Company (Coin)</label>
-                <select name="symbol" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="BTC">BTC</option>
-                  <option value="ETH">ETH</option>
-                  <option value="SOL">SOL</option>
-                  <option value="XRP">XRP</option>
-                  <option value="ADA">ADA</option>
-                  <option value="DOGE">DOGE</option>
-                  <option value="DOT">DOT</option>
-                  <option value="MATIC">MATIC</option>
-                  <option value="AVAX">AVAX</option>
-                  <option value="LTC">LTC</option>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Asset</label>
+                <select name="symbol" id="alertSymbol" class="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-2.5 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <!-- Populated dynamically -->
                 </select>
               </div>
 
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Target Value ($)</label>
-                <input type="number" step="any" name="target_price" required placeholder="e.g. 68000" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Target Price ($)</label>
+                <input type="number" step="any" name="target_price" required placeholder="e.g. 68000" class="w-full bg-slate-800 border border-slate-700 text-white font-mono rounded-xl px-2.5 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
 
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Condition</label>
-                <select name="alert_type" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="increase">📈 Increase / Above</option>
-                  <option value="decrease">📉 Decrease / Below</option>
-                  <option value="above">Above Target</option>
-                  <option value="below">Below Target</option>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Condition</label>
+                <select name="alert_type" class="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-2.5 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="above">📈 Above Target</option>
+                  <option value="below">📉 Below Target</option>
+                  <option value="increase">Price Increase</option>
+                  <option value="decrease">Price Decrease</option>
                 </select>
               </div>
             </div>
 
-            <button type="submit" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm shadow-sm transition">
-              Set Price Alert
+            <button type="submit" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 active:scale-[0.99] text-white border border-slate-700 font-bold rounded-xl text-sm transition-all">
+              Save Price Alert
             </button>
           </form>
 
           <!-- Active Alerts Mini-Table -->
           <div class="mt-4">
-            <h3 class="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Active & Triggered Alerts</h3>
-            <div class="overflow-x-auto max-h-36 overflow-y-auto">
-              <table class="min-w-full text-xs">
-                <thead class="text-left text-slate-400 border-b border-slate-100">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Active & Triggered Alerts</h3>
+              <span id="alerts_count" class="text-xs text-slate-500 font-mono">0 alerts</span>
+            </div>
+
+            <div class="overflow-x-auto max-h-36 overflow-y-auto custom-scrollbar">
+              <table class="w-full text-xs">
+                <thead class="text-left text-slate-400 border-b border-slate-800">
                   <tr>
-                    <th class="py-1 font-semibold">Coin</th>
+                    <th class="py-1 font-semibold">Asset</th>
                     <th class="py-1 font-semibold">Target</th>
-                    <th class="py-1 font-semibold">Direction</th>
+                    <th class="py-1 font-semibold">Condition</th>
                     <th class="py-1 font-semibold">Status</th>
                     <th class="py-1 text-right font-semibold">Action</th>
                   </tr>
                 </thead>
-                <tbody id="alerts" class="divide-y divide-slate-100">
-                  <tr><td colspan="5" class="py-3 text-center text-slate-400">No alerts set</td></tr>
+                <tbody id="alerts_tbody" class="divide-y divide-slate-800/60 font-mono">
+                  <tr><td colspan="5" class="py-4 text-center text-slate-500 font-sans">No alerts configured.</td></tr>
                 </tbody>
               </table>
             </div>
           </div>
         </div>
       </div>
+
     </section>
 
-    <!-- Bottom Section: Live Mock Prices (5s random feed) & Activity / Buy-Sold Log -->
+    <!-- Bottom Grid: Live Tickers & Order History Log -->
     <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      
-      <!-- Live Crypto Company Prices (updates every 5s) - 6 cols -->
-      <div class="lg:col-span-6 bg-white rounded-2xl shadow-sm p-5 border border-slate-200/80">
-        <div class="flex items-center justify-between mb-3">
+
+      <!-- Left Column: Live Real-Time Tickers (6 cols) -->
+      <div class="lg:col-span-6 bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
+        <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
           <div>
-            <h2 class="text-lg font-bold text-slate-900">Live Crypto Company Prices</h2>
-            <p class="text-slate-500 text-xs">Prices change every 5 seconds randomly from <code>mock_prices.json</code>.</p>
+            <h2 class="text-sm font-bold text-slate-300 uppercase tracking-wider">Live Cryptocurrency Tickers</h2>
+            <p class="text-slate-400 text-xs">Streaming simulated prices with 5s delta movements.</p>
           </div>
-          <span class="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-bold text-xs">ALL 10 COINS</span>
+          <span class="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 text-xs font-mono">10 ASSETS</span>
         </div>
 
-        <div class="overflow-x-auto max-h-72 overflow-y-auto">
-          <table class="min-w-full text-xs">
-            <thead class="text-left text-slate-400 border-b border-slate-100 sticky top-0 bg-white">
+        <div class="overflow-x-auto max-h-72 overflow-y-auto custom-scrollbar">
+          <table class="w-full text-xs">
+            <thead class="text-left text-slate-400 border-b border-slate-800 sticky top-0 bg-slate-900/95 backdrop-blur-sm">
               <tr>
-                <th class="py-2 font-semibold">Company (Symbol)</th>
+                <th class="py-2 font-semibold">Asset</th>
                 <th class="py-2 font-semibold">Live Price ($)</th>
-                <th class="py-2 font-semibold">Direction (5s)</th>
-                <th class="py-2 text-right font-semibold">Option</th>
+                <th class="py-2 font-semibold">5s Movement</th>
+                <th class="py-2 text-right font-semibold">Quick Action</th>
               </tr>
             </thead>
-            <tbody id="live_prices_tbody" class="divide-y divide-slate-100">
-              <tr><td colspan="4" class="py-4 text-center text-slate-400">Loading live prices...</td></tr>
+            <tbody id="live_prices_tbody" class="divide-y divide-slate-800/60 font-mono">
+              <tr><td colspan="4" class="py-6 text-center text-slate-500 font-sans">Fetching latest prices...</td></tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <!-- Trade & Alert Activity Log (Filtered by Company, Duration, and Buy/Sold Option) - 6 cols -->
-      <div class="lg:col-span-6 bg-white rounded-2xl shadow-sm p-5 border border-slate-200/80 flex flex-col justify-between">
+      <!-- Right Column: Trade Activity & Order History (6 cols) -->
+      <div class="lg:col-span-6 bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between">
         <div>
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 pb-2 border-b border-slate-800">
             <div>
-              <h2 class="text-lg font-bold text-slate-900">Trade & Alert Activity Filter</h2>
-              <p class="text-slate-500 text-xs">Filter transactions by which company and Buy or Sold option.</p>
+              <h2 class="text-sm font-bold text-slate-300 uppercase tracking-wider">Trade Activity & Order Log</h2>
+              <p class="text-slate-400 text-xs">Historical log of all filled orders.</p>
             </div>
-            
-            <!-- Activity Filter Toolbar -->
-            <div class="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200/80 text-xs">
-              <select id="logSymbolFilter" onchange="renderActivityLog()" class="bg-white border border-slate-200 rounded-lg px-2 py-1 font-semibold text-slate-800">
-                <option value="ALL">All Coins</option>
-                <option value="BTC">BTC</option>
-                <option value="ETH">ETH</option>
-                <option value="SOL">SOL</option>
-                <option value="XRP">XRP</option>
-                <option value="ADA">ADA</option>
-                <option value="DOGE">DOGE</option>
-                <option value="DOT">DOT</option>
-                <option value="MATIC">MATIC</option>
-                <option value="AVAX">AVAX</option>
-                <option value="LTC">LTC</option>
+
+            <div class="flex items-center gap-2 bg-slate-950/60 p-1.5 rounded-xl border border-slate-800 text-xs">
+              <select id="logSymbolFilter" onchange="renderActivityLog()" class="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2 py-1 font-semibold focus:outline-none">
+                <option value="ALL">All Assets</option>
               </select>
-              <select id="logActionFilter" onchange="renderActivityLog()" class="bg-white border border-slate-200 rounded-lg px-2 py-1 font-semibold text-slate-800">
-                <option value="ALL">Buy / Sold (All)</option>
-                <option value="BUY">BUY Orders</option>
-                <option value="SOLD">SOLD Orders</option>
+              <select id="logActionFilter" onchange="renderActivityLog()" class="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2 py-1 font-semibold focus:outline-none">
+                <option value="ALL">All Actions</option>
+                <option value="BUY">BUY Only</option>
+                <option value="SOLD">SELL Only</option>
               </select>
             </div>
           </div>
 
-          <div class="overflow-x-auto max-h-72 overflow-y-auto">
-            <table class="min-w-full text-xs">
-              <thead class="text-left text-slate-400 border-b border-slate-100 sticky top-0 bg-white">
+          <div class="overflow-x-auto max-h-72 overflow-y-auto custom-scrollbar">
+            <table class="w-full text-xs">
+              <thead class="text-left text-slate-400 border-b border-slate-800 sticky top-0 bg-slate-900/95 backdrop-blur-sm">
                 <tr>
-                  <th class="py-2 font-semibold">Time</th>
-                  <th class="py-2 font-semibold">Coin</th>
-                  <th class="py-2 font-semibold">Action / Option</th>
-                  <th class="py-2 font-semibold">Qty</th>
-                  <th class="py-2 text-right font-semibold">Price ($)</th>
+                  <th class="py-2 font-semibold">Timestamp</th>
+                  <th class="py-2 font-semibold">Asset</th>
+                  <th class="py-2 font-semibold">Side</th>
+                  <th class="py-2 font-semibold">Quantity</th>
+                  <th class="py-2 text-right font-semibold">Execution Price</th>
                 </tr>
               </thead>
-              <tbody id="activity_tbody" class="divide-y divide-slate-100">
-                <tr><td colspan="5" class="py-4 text-center text-slate-400">No trading activity yet</td></tr>
+              <tbody id="activity_tbody" class="divide-y divide-slate-800/60 font-mono">
+                <tr><td colspan="5" class="py-6 text-center text-slate-500 font-sans">No recorded orders yet.</td></tr>
               </tbody>
             </table>
           </div>
         </div>
 
         <div class="mt-3 text-right">
-          <span id="activity_count" class="text-[11px] text-slate-400">Showing 0 items</span>
+          <span id="activity_count" class="text-[11px] text-slate-500 font-mono">0 recorded orders</span>
         </div>
       </div>
 
     </section>
+
   </div>
 
-<script>
-// State storage
-window._portfolioData = null;
-window._livePrices = {};
-window._prevPrices = {};
-window._cwChart = null;
+  <!-- Client Application Script -->
+  <script>
+    const COINS = [
+      { symbol: "BTC", name: "Bitcoin" },
+      { symbol: "ETH", name: "Ethereum" },
+      { symbol: "SOL", name: "Solana" },
+      { symbol: "XRP", name: "Ripple" },
+      { symbol: "ADA", name: "Cardano" },
+      { symbol: "DOGE", name: "Dogecoin" },
+      { symbol: "DOT", name: "Polkadot" },
+      { symbol: "MATIC", name: "Polygon" },
+      { symbol: "AVAX", name: "Avalanche" },
+      { symbol: "LTC", name: "Litecoin" }
+    ];
 
-// Show temporary toast message
-function showToast(msg, isError=false) {
-  const t = document.getElementById('toast');
-  const m = document.getElementById('toastMsg');
-  m.textContent = msg;
-  t.className = 'fixed top-4 right-4 z-50 max-w-sm p-4 rounded-xl shadow-lg border text-sm font-medium animate-fade-in transition-all ' + 
-    (isError ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800');
-  t.classList.remove('hidden');
-  setTimeout(hideToast, 4000);
-}
+    // Global client application state
+    const state = {
+      portfolio: null,
+      livePrices: {},
+      prevPrices: {},
+      chartInstance: null,
+    };
 
-function hideToast() {
-  const t = document.getElementById('toast');
-  if (t) t.classList.add('hidden');
-}
+    // Populate dropdown selectors dynamically
+    function populateDropdowns() {
+      const chartSel = document.getElementById('chartSymbol');
+      const tradeSel = document.getElementById('tradeSymbol');
+      const alertSel = document.getElementById('alertSymbol');
+      const logSel = document.getElementById('logSymbolFilter');
 
-// Populate Trade Price input with selected coin's live price
-function syncTradePrice() {
-  const sym = document.getElementById('tradeSymbol').value;
-  const priceInput = document.getElementById('tradePriceInput');
-  if (window._livePrices && window._livePrices[sym]) {
-    priceInput.value = window._livePrices[sym];
-  }
-}
+      COINS.forEach(c => {
+        const optChart = new Option(`${c.symbol} - ${c.name}`, c.symbol);
+        chartSel.add(optChart);
 
-// Quick fill Trade form from table click
-function selectTradeCoin(sym, action='BUY') {
-  const sel = document.getElementById('tradeSymbol');
-  if (sel) sel.value = sym;
-  const radio = document.querySelector(`input[name="action"][value="${action}"]`);
-  if (radio) radio.checked = true;
-  syncTradePrice();
-  // Scroll smoothly to trade form
-  document.getElementById('tradeForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
-}
+        const optTrade = new Option(`${c.symbol} - ${c.name}`, c.symbol);
+        tradeSel.add(optTrade);
 
-// Execute trade order
-async function executeTrade(e) {
-  e.preventDefault();
-  const form = e.target;
-  const fd = new FormData(form);
-  const payload = {
-    symbol: fd.get('symbol').toString().toUpperCase(),
-    action: fd.get('action').toString().toUpperCase(),
-    quantity: parseFloat(fd.get('quantity') || '1'),
-    price: parseFloat(fd.get('price') || '0')
-  };
+        const optAlert = new Option(`${c.symbol} - ${c.name}`, c.symbol);
+        alertSel.add(optAlert);
 
-  try {
-    const res = await fetch('/api/trade/', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (res.ok) {
-      showToast('✅ ' + data.message);
-      await refreshAll();
-    } else {
-      showToast('❌ ' + (data.error || 'Trade failed'), true);
-    }
-  } catch (err) {
-    showToast('❌ Failed to execute trade order', true);
-  }
-}
-
-// Fetch and render portfolio & chart data
-async function refreshPortfolio() {
-  try {
-    const res = await fetch('/api/portfolio/');
-    const data = await res.json();
-    window._portfolioData = data;
-
-    // Totals
-    document.getElementById('total_cost').textContent = '$' + (data.totals.total_cost || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    document.getElementById('total_value').textContent = '$' + (data.totals.total_value || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    
-    const pnlAbs = data.totals.pnl_abs || 0;
-    const pnlPct = data.totals.pnl_pct || 0;
-    const absEl = document.getElementById('pnl_abs');
-    const pctEl = document.getElementById('pnl_pct');
-    const badgeEl = document.getElementById('pnl_badge');
-
-    absEl.textContent = (pnlAbs >= 0 ? '+$' : '-$') + Math.abs(pnlAbs).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    absEl.className = 'text-lg font-bold mt-0.5 ' + (pnlAbs >= 0 ? 'text-emerald-600' : 'text-rose-600');
-    pctEl.textContent = (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(2) + '%';
-    pctEl.className = 'text-lg font-bold mt-0.5 ' + (pnlPct >= 0 ? 'text-emerald-600' : 'text-rose-600');
-
-    if (pnlAbs >= 0) {
-      badgeEl.textContent = '📈 PROFIT';
-      badgeEl.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200';
-    } else {
-      badgeEl.textContent = '📉 LOSS';
-      badgeEl.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200';
-    }
-
-    // Holdings Table
-    const holdingsTbody = document.getElementById('holdings');
-    const countEl = document.getElementById('holdings_count');
-    holdingsTbody.innerHTML = '';
-    const holdings = data.holdings || [];
-    countEl.textContent = holdings.length + ' coin' + (holdings.length === 1 ? '' : 's');
-
-    if (holdings.length === 0) {
-      holdingsTbody.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-slate-400">No holdings yet</td></tr>';
-    } else {
-      holdings.forEach(h => {
-        const row = document.createElement('tr');
-        const pnlClass = h.pnl_abs >= 0 ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold';
-        row.innerHTML = `
-          <td class="py-2.5 font-bold text-slate-800">${h.symbol}</td>
-          <td class="py-2.5">${Number(h.quantity).toFixed(4)}</td>
-          <td class="py-2.5 text-slate-500">$${Number(h.avg_buy_price).toFixed(2)} / <strong class="text-slate-800">$${Number(h.current_price).toFixed(2)}</strong></td>
-          <td class="py-2.5 ${pnlClass}">
-            ${h.pnl_abs >= 0 ? '+' : ''}$${h.pnl_abs.toFixed(2)} (${h.pnl_pct.toFixed(1)}%)
-          </td>
-          <td class="py-2.5 text-right space-x-1">
-            <button onclick="selectTradeCoin('${h.symbol}', 'BUY')" class="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded text-[10px] font-bold">+ Buy</button>
-            <button onclick="selectTradeCoin('${h.symbol}', 'SOLD')" class="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded text-[10px] font-bold">- Sold</button>
-          </td>
-        `;
-        holdingsTbody.appendChild(row);
+        const optLog = new Option(c.symbol, c.symbol);
+        logSel.add(optLog);
       });
     }
 
-    // Update Interactive Chart and Log
-    updateChartDisplay();
-    renderActivityLog();
-  } catch (err) {
-    console.error('Failed to refresh portfolio:', err);
-  }
-}
+    // Toast notification utility
+    function showToast(message, isError = false) {
+      const toast = document.getElementById('toast');
+      const msgEl = document.getElementById('toastMsg');
+      const iconEl = document.getElementById('toastIcon');
 
-// Update chart display with Which Company, Duration, and Increase/Decrease filters
-function updateChartDisplay() {
-  if (!window._portfolioData) return;
-  const data = window._portfolioData;
+      msgEl.textContent = message;
+      iconEl.textContent = isError ? '❌' : '✅';
 
-  const symbolFilter = document.getElementById('chartSymbolFilter').value;
-  const durationFilter = parseInt(document.getElementById('chartDurationFilter').value || '200', 10);
-  const directionFilter = document.getElementById('chartDirectionFilter').value;
-  const refValueInput = document.getElementById('chartRefValue').value;
-  const refValue = refValueInput ? parseFloat(refValueInput) : null;
+      toast.className = `fixed top-5 right-5 z-50 max-w-md p-4 rounded-xl shadow-2xl border backdrop-blur-md transition-all duration-300 ${
+        isError ? 'bg-rose-950/90 border-rose-800 text-rose-200' : 'bg-emerald-950/90 border-emerald-800 text-emerald-200'
+      }`;
+      toast.classList.remove('hidden');
 
-  let rawPoints = [];
-  let labelPrefix = 'Portfolio Total Value ($)';
-
-  if (symbolFilter === 'ALL') {
-    rawPoints = data.price_history || [];
-    labelPrefix = 'Portfolio Total Value ($)';
-  } else {
-    const coinHistories = data.coin_histories || {};
-    rawPoints = coinHistories[symbolFilter] || [];
-    labelPrefix = `${symbolFilter} Price ($)`;
-  }
-
-  // Slice by duration filter
-  let points = rawPoints.slice(-durationFilter);
-
-  // Filter by Increase or Decrease direction
-  if (directionFilter === 'INCREASE' && points.length > 1) {
-    points = points.filter((p, idx) => idx === 0 || p.price >= points[idx - 1].price || (p.value !== undefined && p.value >= points[idx - 1].value));
-  } else if (directionFilter === 'DECREASE' && points.length > 1) {
-    points = points.filter((p, idx) => idx === 0 || p.price <= points[idx - 1].price || (p.value !== undefined && p.value <= points[idx - 1].value));
-  }
-
-  // Extract labels and numerical values
-  const labels = points.map(p => {
-    try {
-      return new Date(p.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
-    } catch(e) {
-      return '';
+      setTimeout(hideToast, 4500);
     }
-  });
-  const values = points.map(p => p.price !== undefined ? p.price : (p.value !== undefined ? p.value : 0));
 
-  // Compute stats for Banner
-  const currentValEl = document.getElementById('chart_current_val');
-  const periodChangeEl = document.getElementById('chart_period_change');
-  const dirBadge = document.getElementById('chart_direction_badge');
-  const refBadge = document.getElementById('chart_ref_badge');
-
-  if (values.length > 0) {
-    const latestVal = values[values.length - 1];
-    const firstVal = values[0];
-    const change = latestVal - firstVal;
-    const changePct = firstVal ? (change / firstVal * 100) : 0;
-
-    currentValEl.textContent = '$' + latestVal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4});
-    
-    const isUp = change >= 0;
-    periodChangeEl.textContent = `${isUp ? '+' : ''}$${change.toFixed(2)} (${isUp ? '+' : ''}${changePct.toFixed(2)}%)`;
-    periodChangeEl.className = `font-bold ml-1 ${isUp ? 'text-emerald-600' : 'text-rose-600'}`;
-
-    dirBadge.textContent = isUp ? '📈 INCREASING' : '📉 DECREASING';
-    dirBadge.className = `px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider text-[10px] ${isUp ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`;
-
-    // Custom Reference Value comparison
-    if (refValue !== null && !isNaN(refValue)) {
-      refBadge.classList.remove('hidden');
-      const aboveRef = latestVal >= refValue;
-      refBadge.textContent = aboveRef ? `🟢 ABOVE $${refValue}` : `🔴 BELOW $${refValue}`;
-      refBadge.className = `px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider text-[10px] ${aboveRef ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'}`;
-    } else {
-      refBadge.classList.add('hidden');
+    function hideToast() {
+      const toast = document.getElementById('toast');
+      if (toast) toast.classList.add('hidden');
     }
-  } else {
-    currentValEl.textContent = '$0.00';
-    periodChangeEl.textContent = '$0.00 (0.00%)';
-    dirBadge.textContent = 'NO DATA';
-  }
 
-  // Render Chart.js
-  const ctx = document.getElementById('chart');
-  if (!ctx) return;
+    // Sync trade price input with selected coin's live price
+    function syncTradePrice() {
+      const sym = document.getElementById('tradeSymbol').value;
+      const priceInput = document.getElementById('tradePriceInput');
+      if (state.livePrices && state.livePrices[sym]) {
+        priceInput.value = state.livePrices[sym];
+      }
+    }
 
-  const isPositive = values.length >= 2 ? (values[values.length - 1] >= values[0]) : true;
-  const borderColor = isPositive ? '#16a34a' : '#dc2626';
-  const bgColor = isPositive ? 'rgba(22, 163, 74, 0.08)' : 'rgba(220, 38, 38, 0.08)';
+    // Quick-select a coin for trading from holdings or ticker table
+    function selectTradeCoin(symbol, action = 'BUY') {
+      const tradeSel = document.getElementById('tradeSymbol');
+      if (tradeSel) tradeSel.value = symbol;
 
-  if (window._cwChart) window._cwChart.destroy();
-  window._cwChart = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: labels,
-      datasets: [{
-        label: labelPrefix,
-        data: values,
-        borderColor: borderColor,
-        backgroundColor: bgColor,
-        fill: true,
-        tension: 0.25,
-        pointRadius: values.length < 20 ? 3 : 0,
-        pointHoverRadius: 5,
-        borderWidth: 2.5
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          mode: 'index',
-          intersect: false,
-          callbacks: {
-            label: (ctx) => `Value: $${Number(ctx.raw).toFixed(4)}`
-          }
+      const radio = document.querySelector(`input[name="action"][value="${action}"]`);
+      if (radio) radio.checked = true;
+
+      syncTradePrice();
+      document.getElementById('tradeForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    // Execute BUY / SELL trade order
+    async function handleTradeSubmit(e) {
+      e.preventDefault();
+      const form = e.target;
+      const fd = new FormData(form);
+      const payload = {
+        symbol: fd.get('symbol').toString().toUpperCase(),
+        action: fd.get('action').toString().toUpperCase(),
+        quantity: parseFloat(fd.get('quantity') || '1'),
+        price: parseFloat(fd.get('price') || '0')
+      };
+
+      try {
+        const res = await fetch('/api/trade/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showToast(data.message || 'Trade order executed successfully');
+          await refreshAll();
+        } else {
+          showToast(data.error || 'Trade order failed', true);
         }
-      },
-      scales: {
-        x: { 
-          grid: { display: false },
-          ticks: { maxTicksLimit: 6, font: { size: 10 } }
+      } catch (err) {
+        showToast('Network error executing trade', true);
+      }
+    }
+
+    // Fetch and render portfolio snapshot
+    async function fetchPortfolio() {
+      try {
+        const res = await fetch('/api/portfolio/');
+        const data = await res.json();
+        state.portfolio = data;
+
+        const totals = data.totals || {};
+        document.getElementById('total_cost').textContent = '$' + (totals.total_cost || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        document.getElementById('total_value').textContent = '$' + (totals.total_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        const pnlAbs = totals.pnl_abs || 0;
+        const pnlPct = totals.pnl_pct || 0;
+        const absEl = document.getElementById('pnl_abs');
+        const pctEl = document.getElementById('pnl_pct');
+        const badgeEl = document.getElementById('pnl_badge');
+
+        absEl.textContent = (pnlAbs >= 0 ? '+$' : '-$') + Math.abs(pnlAbs).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        absEl.className = `text-lg font-bold font-mono mt-1 ${pnlAbs >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+
+        pctEl.textContent = (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(2) + '%';
+        pctEl.className = `text-lg font-bold font-mono mt-1 ${pnlPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+
+        if (pnlAbs >= 0) {
+          badgeEl.textContent = '📈 PROFIT';
+          badgeEl.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+        } else {
+          badgeEl.textContent = '📉 LOSS';
+          badgeEl.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30';
+        }
+
+        // Render Holdings Table
+        const holdingsTbody = document.getElementById('holdings_tbody');
+        const countEl = document.getElementById('holdings_count');
+        const holdings = data.holdings || [];
+
+        countEl.textContent = `${holdings.length} asset${holdings.length === 1 ? '' : 's'}`;
+        holdingsTbody.innerHTML = '';
+
+        if (holdings.length === 0) {
+          holdingsTbody.innerHTML = '<tr><td colspan="5" class="py-6 text-center text-slate-500 font-sans">No holdings yet. Buy assets below to start trading.</td></tr>';
+        } else {
+          holdings.forEach(h => {
+            const row = document.createElement('tr');
+            row.className = 'hover:bg-slate-800/40 transition-colors';
+            const isProfit = h.pnl_abs >= 0;
+            row.innerHTML = `
+              <td class="py-2.5 font-bold text-white">${h.symbol}</td>
+              <td class="py-2.5 text-slate-300">${Number(h.quantity).toFixed(4)}</td>
+              <td class="py-2.5 text-slate-400">$${Number(h.avg_buy_price).toFixed(2)} / <strong class="text-white">$${Number(h.current_price).toFixed(2)}</strong></td>
+              <td class="py-2.5 ${isProfit ? 'text-emerald-400' : 'text-rose-400'} font-semibold">
+                ${isProfit ? '+' : ''}$${h.pnl_abs.toFixed(2)} (${isProfit ? '+' : ''}${h.pnl_pct.toFixed(1)}%)
+              </td>
+              <td class="py-2.5 text-right space-x-1 font-sans">
+                <button onclick="selectTradeCoin('${h.symbol}', 'BUY')" class="px-2 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded text-[11px] font-bold transition-colors">+ Buy</button>
+                <button onclick="selectTradeCoin('${h.symbol}', 'SOLD')" class="px-2 py-0.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 rounded text-[11px] font-bold transition-colors">- Sell</button>
+              </td>
+            `;
+            holdingsTbody.appendChild(row);
+          });
+        }
+
+        renderChart();
+        renderActivityLog();
+      } catch (err) {
+        console.error('Failed to fetch portfolio:', err);
+      }
+    }
+
+    // Render interactive chart
+    function renderChart() {
+      if (!state.portfolio) return;
+
+      const symbolFilter = document.getElementById('chartSymbol').value;
+      const duration = parseInt(document.getElementById('chartDuration').value || '200', 10);
+      const direction = document.getElementById('chartDirection').value;
+      const refPriceInput = document.getElementById('chartRefPrice').value;
+      const refPrice = refPriceInput ? parseFloat(refPriceInput) : null;
+
+      let rawPoints = [];
+      let labelPrefix = 'Portfolio Value ($)';
+
+      if (symbolFilter === 'ALL') {
+        rawPoints = state.portfolio.price_history || [];
+        labelPrefix = 'Portfolio Total Value ($)';
+      } else {
+        const coinHistories = state.portfolio.coin_histories || {};
+        rawPoints = coinHistories[symbolFilter] || [];
+        labelPrefix = `${symbolFilter} Price ($)`;
+      }
+
+      let points = rawPoints.slice(-duration);
+
+      if (direction === 'INCREASE' && points.length > 1) {
+        points = points.filter((p, idx) => idx === 0 || p.price >= points[idx - 1].price || (p.value !== undefined && p.value >= points[idx - 1].value));
+      } else if (direction === 'DECREASE' && points.length > 1) {
+        points = points.filter((p, idx) => idx === 0 || p.price <= points[idx - 1].price || (p.value !== undefined && p.value <= points[idx - 1].value));
+      }
+
+      const labels = points.map(p => {
+        try {
+          return new Date(p.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        } catch (e) {
+          return '';
+        }
+      });
+      const values = points.map(p => p.price !== undefined ? p.price : (p.value !== undefined ? p.value : 0));
+
+      // Update stat indicators
+      const curValEl = document.getElementById('chart_current_val');
+      const shiftEl = document.getElementById('chart_period_change');
+      const dirBadge = document.getElementById('chart_direction_badge');
+      const refBadge = document.getElementById('chart_ref_badge');
+
+      if (values.length > 0) {
+        const latest = values[values.length - 1];
+        const initial = values[0];
+        const delta = latest - initial;
+        const deltaPct = initial > 0 ? (delta / initial * 100) : 0;
+        const isUp = delta >= 0;
+
+        curValEl.textContent = '$' + latest.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+        shiftEl.textContent = `${isUp ? '+' : ''}$${delta.toFixed(2)} (${isUp ? '+' : ''}${deltaPct.toFixed(2)}%)`;
+        shiftEl.className = `font-bold ml-1 ${isUp ? 'text-emerald-400' : 'text-rose-400'}`;
+
+        dirBadge.textContent = isUp ? '📈 Bullish / Up' : '📉 Bearish / Down';
+        dirBadge.className = `px-2.5 py-0.5 rounded-full font-bold text-[10px] uppercase tracking-wider ${
+          isUp ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+        }`;
+
+        if (refPrice !== null && !isNaN(refPrice)) {
+          refBadge.classList.remove('hidden');
+          const isAbove = latest >= refPrice;
+          refBadge.textContent = isAbove ? `🟢 Above $${refPrice}` : `🔴 Below $${refPrice}`;
+          refBadge.className = `px-2.5 py-0.5 rounded-full font-bold text-[10px] uppercase tracking-wider ${
+            isAbove ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+          }`;
+        } else {
+          refBadge.classList.add('hidden');
+        }
+      } else {
+        curValEl.textContent = '$0.00';
+        shiftEl.textContent = '$0.00 (0.00%)';
+        dirBadge.textContent = 'No Data';
+      }
+
+      // Chart.js initialization
+      const canvas = document.getElementById('mainChart');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+
+      const isBull = values.length >= 2 ? (values[values.length - 1] >= values[0]) : true;
+      const strokeColor = isBull ? '#10b981' : '#f43f5e';
+
+      const gradient = ctx.createLinearGradient(0, 0, 0, 280);
+      gradient.addColorStop(0, isBull ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)');
+      gradient.addColorStop(1, 'rgba(15, 23, 42, 0.0)');
+
+      if (state.chartInstance) {
+        state.chartInstance.destroy();
+      }
+
+      state.chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: labelPrefix,
+            data: values,
+            borderColor: strokeColor,
+            backgroundColor: gradient,
+            fill: true,
+            tension: 0.3,
+            borderWidth: 2,
+            pointRadius: values.length < 25 ? 3 : 0,
+            pointHoverRadius: 5,
+            pointBackgroundColor: strokeColor,
+          }]
         },
-        y: { 
-          grid: { color: 'rgba(226, 232, 240, 0.6)' },
-          ticks: { 
-            callback: val => '$' + Number(val).toLocaleString(),
-            font: { size: 10 }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'index',
+            intersect: false,
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#0f172a',
+              borderColor: '#334155',
+              borderWidth: 1,
+              padding: 10,
+              displayColors: false,
+              callbacks: {
+                label: (c) => `Value: $${Number(c.raw).toFixed(4)}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { maxTicksLimit: 6, color: '#64748b', font: { family: 'JetBrains Mono', size: 10 } }
+            },
+            y: {
+              grid: { color: 'rgba(51, 65, 85, 0.4)' },
+              ticks: {
+                callback: v => '$' + Number(v).toLocaleString(),
+                color: '#64748b',
+                font: { family: 'JetBrains Mono', size: 10 }
+              }
+            }
           }
         }
-      }
-    }
-  });
-}
-
-// Render Trade & Alert Activity Log with filters
-function renderActivityLog() {
-  const tbody = document.getElementById('activity_tbody');
-  const countEl = document.getElementById('activity_count');
-  if (!tbody) return;
-
-  const symbolFilter = document.getElementById('logSymbolFilter').value;
-  const actionFilter = document.getElementById('logActionFilter').value;
-
-  const transactions = (window._portfolioData && window._portfolioData.transactions) ? window._portfolioData.transactions : [];
-  
-  let filtered = transactions;
-  if (symbolFilter !== 'ALL') {
-    filtered = filtered.filter(item => item.symbol === symbolFilter);
-  }
-  if (actionFilter !== 'ALL') {
-    filtered = filtered.filter(item => item.action === actionFilter);
-  }
-
-  tbody.innerHTML = '';
-  countEl.textContent = `Showing ${filtered.length} trade order(s)`;
-
-  if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-slate-400">No trading activity matching filter</td></tr>';
-    return;
-  }
-
-  filtered.forEach(tx => {
-    const row = document.createElement('tr');
-    const isBuy = tx.action === 'BUY';
-    const timeStr = new Date(tx.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
-    row.innerHTML = `
-      <td class="py-2.5 text-slate-500">${timeStr}</td>
-      <td class="py-2.5 font-bold text-slate-800">${tx.symbol}</td>
-      <td class="py-2.5">
-        <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isBuy ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">
-          ${tx.action}
-        </span>
-      </td>
-      <td class="py-2.5 font-medium">${Number(tx.quantity).toFixed(4)}</td>
-      <td class="py-2.5 text-right font-bold text-slate-800">$${Number(tx.price).toFixed(2)}</td>
-    `;
-    tbody.appendChild(row);
-  });
-}
-
-// Deactivate alert
-async function deactivateAlert(symbol) {
-  try {
-    const res = await fetch('/api/alerts/deactivate/', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({symbol})
-    });
-    if (res.ok) {
-      showToast(`✅ Alert for ${symbol} deactivated`);
-      await refreshAlerts();
-    }
-  } catch (err) {
-    console.error('Failed to deactivate alert:', err);
-  }
-}
-
-// Fetch and render alerts
-async function refreshAlerts() {
-  try {
-    const res = await fetch('/api/alerts/');
-    const data = await res.json();
-    const tbody = document.getElementById('alerts');
-    tbody.innerHTML = '';
-
-    const alerts = data.alerts || [];
-    if (alerts.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="py-3 text-center text-slate-400">No active alerts set</td></tr>';
-      return;
+      });
     }
 
-    alerts.forEach(a => {
-      const row = document.createElement('tr');
-      const typeBadge = {
-        'above': '🟢 Above',
-        'below': '🔴 Below',
-        'increase': '📈 Increase',
-        'decrease': '📉 Decrease'
-      }[a.alert_type] || a.alert_type;
+    // Render activity and order log
+    function renderActivityLog() {
+      const tbody = document.getElementById('activity_tbody');
+      const countEl = document.getElementById('activity_count');
+      if (!tbody) return;
 
-      row.innerHTML = `
-        <td class="py-2 font-bold text-slate-800">${a.symbol}</td>
-        <td class="py-2">$${Number(a.target_price).toFixed(2)}</td>
-        <td class="py-2 font-medium">${typeBadge}</td>
-        <td class="py-2">
-          <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${a.is_triggered ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}">
-            ${a.is_triggered ? 'Triggered' : 'Active'}
-          </span>
-        </td>
-        <td class="py-2 text-right">
-          <button class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg text-xs font-medium" onclick="deactivateAlert('${a.symbol}')">Deactivate</button>
-        </td>
-      `;
-      tbody.appendChild(row);
-    });
-  } catch (err) {
-    console.error('Failed to refresh alerts:', err);
-  }
-}
+      const symFilter = document.getElementById('logSymbolFilter').value;
+      const actionFilter = document.getElementById('logActionFilter').value;
+      const txs = (state.portfolio && state.portfolio.transactions) ? state.portfolio.transactions : [];
 
-// Create alert
-async function createAlert(e) {
-  e.preventDefault();
-  const form = e.target;
-  const fd = new FormData(form);
-  const payload = {
-    symbol: (fd.get('symbol') || '').toString().toUpperCase(),
-    target_price: parseFloat(fd.get('target_price')),
-    alert_type: fd.get('alert_type')
-  };
+      let filtered = txs;
+      if (symFilter !== 'ALL') filtered = filtered.filter(t => t.symbol === symFilter);
+      if (actionFilter !== 'ALL') filtered = filtered.filter(t => t.action === actionFilter);
 
-  try {
-    const res = await fetch('/api/alerts/create/', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (res.ok) {
-      showToast(`✅ Alert set for ${payload.symbol} (${payload.alert_type} $${payload.target_price})`);
-      await refreshPortfolio();
-      await refreshAlerts();
-      form.reset();
-    } else {
-      showToast('❌ ' + (data.error || 'Could not create alert'), true);
-    }
-  } catch (err) {
-    showToast('❌ Failed to set price alert', true);
-  }
-}
+      countEl.textContent = `${filtered.length} recorded order${filtered.length === 1 ? '' : 's'}`;
+      tbody.innerHTML = '';
 
-// Fetch and render live prices (updates every 5s randomly)
-async function refreshLivePrices() {
-  try {
-    const res = await fetch('/api/live-prices/');
-    const data = await res.json();
-
-    const tbody = document.getElementById('live_prices_tbody');
-    tbody.innerHTML = '';
-
-    const prices = data.prices || {};
-    const refValInput = document.getElementById('chartRefValue').value;
-    const refVal = refValInput ? parseFloat(refValInput) : null;
-
-    Object.keys(prices).sort().forEach(sym => {
-      const price = Number(prices[sym]);
-      const prev = window._prevPrices[sym] || price;
-      const isUp = price >= prev;
-      window._prevPrices[sym] = price;
-
-      // Check if user set reference value for comparison
-      let refBadgeHtml = '';
-      if (refVal !== null && !isNaN(refVal)) {
-        const isAboveRef = price >= refVal;
-        refBadgeHtml = `<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold ${isAboveRef ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">${isAboveRef ? 'Above Ref' : 'Below Ref'}</span>`;
+      if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="py-6 text-center text-slate-500 font-sans">No recorded orders matching filter.</td></tr>';
+        return;
       }
 
-      const row = document.createElement('tr');
-      row.className = 'hover:bg-slate-50 transition';
-      row.innerHTML = `
-        <td class="py-2.5 font-bold text-slate-900 flex items-center gap-2">
-          <span>${sym}</span>
-          ${refBadgeHtml}
-        </td>
-        <td class="py-2.5 font-bold text-slate-800">$${price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4})}</td>
-        <td class="py-2.5">
-          <span class="px-2 py-0.5 rounded-full font-bold text-[10px] ${isUp ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">
-            ${isUp ? '📈 INCREASE' : '📉 DECREASE'}
-          </span>
-        </td>
-        <td class="py-2.5 text-right space-x-1">
-          <button onclick="selectTradeCoin('${sym}', 'BUY')" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition">Buy</button>
-          <button onclick="selectTradeCoin('${sym}', 'SOLD')" class="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition">Sold</button>
-        </td>
-      `;
-      tbody.appendChild(row);
-    });
+      filtered.forEach(t => {
+        const isBuy = t.action === 'BUY';
+        const timeStr = new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const row = document.createElement('tr');
+        row.className = 'hover:bg-slate-800/40 transition-colors';
+        row.innerHTML = `
+          <td class="py-2.5 text-slate-400">${timeStr}</td>
+          <td class="py-2.5 font-bold text-white">${t.symbol}</td>
+          <td class="py-2.5 font-sans">
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isBuy ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'}">
+              ${t.action}
+            </span>
+          </td>
+          <td class="py-2.5 text-slate-300">${Number(t.quantity).toFixed(4)}</td>
+          <td class="py-2.5 text-right font-bold text-white">$${Number(t.price).toFixed(2)}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
 
-    window._livePrices = prices;
-    syncTradePrice();
-    document.getElementById('live_prices_last_update').textContent = new Date().toLocaleTimeString();
-  } catch (err) {
-    console.error('Failed to refresh live prices:', err);
-  }
-}
+    // Create price alert
+    async function handleAlertSubmit(e) {
+      e.preventDefault();
+      const form = e.target;
+      const fd = new FormData(form);
+      const payload = {
+        symbol: (fd.get('symbol') || '').toString().toUpperCase(),
+        target_price: parseFloat(fd.get('target_price')),
+        alert_type: fd.get('alert_type')
+      };
 
-async function refreshAll() {
-  await refreshLivePrices();
-  await refreshPortfolio();
-  await refreshAlerts();
-}
+      try {
+        const res = await fetch('/api/alerts/create/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showToast(`Alert set: ${payload.symbol} ${payload.alert_type} $${payload.target_price}`);
+          await fetchAlerts();
+          form.reset();
+        } else {
+          showToast(data.error || 'Failed to create alert', true);
+        }
+      } catch (err) {
+        showToast('Network error creating alert', true);
+      }
+    }
 
-// Initial sync
-refreshAll();
+    // Deactivate price alert
+    async function deactivateAlert(symbol) {
+      try {
+        const res = await fetch('/api/alerts/deactivate/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol })
+        });
+        if (res.ok) {
+          showToast(`Alert for ${symbol} removed`);
+          await fetchAlerts();
+        } else {
+          showToast('Could not deactivate alert', true);
+        }
+      } catch (err) {
+        showToast('Network error deactivating alert', true);
+      }
+    }
 
-// Automatic 5-second polling interval as requested
-setInterval(refreshAll, 5000);
-</script>
+    // Fetch and render price alerts
+    async function fetchAlerts() {
+      try {
+        const res = await fetch('/api/alerts/');
+        const data = await res.json();
+        const tbody = document.getElementById('alerts_tbody');
+        const countEl = document.getElementById('alerts_count');
+        const alerts = data.alerts || [];
+
+        countEl.textContent = `${alerts.length} alert${alerts.length === 1 ? '' : 's'}`;
+        tbody.innerHTML = '';
+
+        if (alerts.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-slate-500 font-sans">No alerts configured.</td></tr>';
+          return;
+        }
+
+        alerts.forEach(a => {
+          const row = document.createElement('tr');
+          row.className = 'hover:bg-slate-800/40 transition-colors';
+          const conditionLabel = {
+            'above': 'Above',
+            'below': 'Below',
+            'increase': 'Increase',
+            'decrease': 'Decrease'
+          }[a.alert_type] || a.alert_type;
+
+          row.innerHTML = `
+            <td class="py-2 font-bold text-white">${a.symbol}</td>
+            <td class="py-2 text-slate-300">$${Number(a.target_price).toFixed(2)}</td>
+            <td class="py-2 font-medium text-slate-400 capitalize">${conditionLabel}</td>
+            <td class="py-2 font-sans">
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                a.is_triggered ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700'
+              }">
+                ${a.is_triggered ? 'Triggered' : 'Active'}
+              </span>
+            </td>
+            <td class="py-2 text-right font-sans">
+              <button onclick="deactivateAlert('${a.symbol}')" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded text-[11px] transition-colors">Dismiss</button>
+            </td>
+          `;
+          tbody.appendChild(row);
+        });
+      } catch (err) {
+        console.error('Failed to fetch alerts:', err);
+      }
+    }
+
+    // Fetch and render simulated live prices
+    async function fetchLivePrices() {
+      try {
+        const res = await fetch('/api/live-prices/');
+        const data = await res.json();
+        const tbody = document.getElementById('live_prices_tbody');
+        const prices = data.prices || {};
+
+        tbody.innerHTML = '';
+        Object.keys(prices).sort().forEach(sym => {
+          const price = Number(prices[sym]);
+          const prev = state.prevPrices[sym] || price;
+          const isUp = price >= prev;
+          state.prevPrices[sym] = price;
+
+          const row = document.createElement('tr');
+          row.className = 'hover:bg-slate-800/40 transition-colors';
+          row.innerHTML = `
+            <td class="py-2.5 font-bold text-white flex items-center gap-2">
+              <span>${sym}</span>
+            </td>
+            <td class="py-2.5 font-bold text-slate-100">$${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
+            <td class="py-2.5 font-sans">
+              <span class="px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                isUp ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+              }">
+                ${isUp ? '▲ +UP' : '▼ -DOWN'}
+              </span>
+            </td>
+            <td class="py-2.5 text-right space-x-1 font-sans">
+              <button onclick="selectTradeCoin('${sym}', 'BUY')" class="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm">Buy</button>
+              <button onclick="selectTradeCoin('${sym}', 'SOLD')" class="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm">Sell</button>
+            </td>
+          `;
+          tbody.appendChild(row);
+        });
+
+        state.livePrices = prices;
+        syncTradePrice();
+        document.getElementById('last_sync_time').textContent = new Date().toLocaleTimeString();
+      } catch (err) {
+        console.error('Failed to fetch live prices:', err);
+      }
+    }
+
+    async function refreshAll() {
+      await fetchLivePrices();
+      await fetchPortfolio();
+      await fetchAlerts();
+    }
+
+    // Initialize application
+    populateDropdowns();
+    refreshAll();
+
+    // 5-second automatic live poll cycle
+    setInterval(refreshAll, 5000);
+  </script>
 </body>
 </html>

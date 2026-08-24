@@ -1,116 +1,214 @@
-from __future__ import annotations
-
-import math
-from dataclasses import dataclass
+import json
+import logging
+import threading
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-import json
-import time
+from django.conf import settings
 
-from CryptoWatch.settings import REDIS_DB, REDIS_HOST, REDIS_PREFIX, REDIS_PORT
+logger = logging.getLogger(__name__)
 
-from redis import Redis
+# Fallback in-memory storage structures (thread-safe)
+_LOCK = threading.Lock()
+_MEMORY_PORTFOLIO: Dict[str, Dict[str, float]] = {}
+_MEMORY_HISTORIES: Dict[str, List[tuple[float, float]]] = {}
+_MEMORY_ALERTS: Dict[str, Dict[str, Any]] = {}
+_MEMORY_TRANSACTIONS: List[Dict[str, Any]] = []
 
-from .repositories_fallback import InMemoryAlertsRepository, InMemoryPortfolioRepository
-from .domain.exceptions import UnknownCoinSymbolError
-
-
-class RedisHandle:
-    def __init__(self):
-        self.client = Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
-
-    def key(self, *parts: str) -> str:
-        return ':'.join([REDIS_PREFIX, *parts])
+TRACKED_SYMBOLS = ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "DOT", "MATIC", "AVAX", "LTC"]
 
 
-    def ping(self) -> bool:
+class RedisManager:
+    """Manages Redis connection pooling and availability status."""
+
+    _pool = None
+    _is_available: Optional[bool] = None
+    _last_check: float = 0.0
+
+    @classmethod
+    def get_client(cls):
         try:
-            return bool(self.client.ping())
+            import redis
+            if cls._pool is None:
+                cls._pool = redis.ConnectionPool(
+                    host=getattr(settings, 'REDIS_HOST', 'localhost'),
+                    port=getattr(settings, 'REDIS_PORT', 6379),
+                    db=getattr(settings, 'REDIS_DB', 0),
+                    decode_responses=True,
+                    socket_connect_timeout=0.5,
+                )
+            return redis.Redis(connection_pool=cls._pool)
         except Exception:
+            return None
+
+    @classmethod
+    def is_available(cls) -> bool:
+        now = time.time()
+        # Re-check availability at most once every 10 seconds
+        if cls._is_available is not None and (now - cls._last_check) < 10.0:
+            return cls._is_available
+
+        client = cls.get_client()
+        if client is None:
+            cls._is_available = False
+            cls._last_check = now
             return False
 
+        try:
+            cls._is_available = bool(client.ping())
+        except Exception:
+            cls._is_available = False
 
-def _redis_available() -> bool:
-    rh = RedisHandle()
-    return rh.ping()
+        cls._last_check = now
+        return cls._is_available
 
+    @staticmethod
+    def key(*parts: str) -> str:
+        prefix = getattr(settings, 'REDIS_PREFIX', 'cryptowatch')
+        return ':'.join([prefix, *parts])
 
 
 class PortfolioRepository:
-    """Repository layer for Redis-backed domain state.
+    """Repository handling cryptocurrency holdings, transactions, and valuation histories.
 
-    If Redis is unavailable, falls back to an in-memory implementation so the project remains executable.
+    Uses Redis when available, with an automatic in-memory fallback for local development.
     """
 
-    def __init__(self):
-        if not _redis_available():
-            self._fallback = InMemoryPortfolioRepository()
-            return
+    def __init__(self, user_id: int = 55):
+        self.user_id = user_id
+        self.use_redis = RedisManager.is_available()
+        self.redis = RedisManager.get_client() if self.use_redis else None
+        self.portfolio_key = RedisManager.key('portfolio', f'user:{self.user_id}')
+        self.tx_key = RedisManager.key('transactions', f'user:{self.user_id}')
 
-        self._fallback = None
-        self.rh = RedisHandle()
-        # Single user demo: user_id=55 as requested in pattern.
-        self.user_id = 55
-
-        # Redis Hash:
-        # portfolio:user:55 -> {"BTC": "{quantity,avg_buy_price}", ...}
-        self.k_portfolio = self.rh.key('portfolio', f'user:{self.user_id}')
-
-    def _z_hist_key(self, symbol: str) -> str:
-
-        # prices:history:BTC
-        return self.rh.key('prices', 'history', symbol)
+    def _history_key(self, symbol: str) -> str:
+        return RedisManager.key('prices', 'history', symbol)
 
     def log_price(self, symbol: str, price: float, epoch: float) -> None:
-        if self._fallback is not None:
-            return self._fallback.log_price(symbol=symbol, price=price, epoch=epoch)
+        """Record a historical price data point for a coin symbol."""
+        symbol = symbol.upper()
+        price = float(price)
+        epoch = float(epoch)
 
-        # Store in ZSET: member=price, score=epoch
-        self.rh.client.zadd(self._z_hist_key(symbol), {str(float(price)): float(epoch)})
-        # Keep last ~1000 points per symbol
-        self.rh.client.zremrangebyrank(self._z_hist_key(symbol), 0, -1001)
+        if self.use_redis and self.redis:
+            try:
+                hist_key = self._history_key(symbol)
+                self.redis.zadd(hist_key, {str(price): epoch})
+                # Retain the last 1000 data points
+                self.redis.zremrangebyrank(hist_key, 0, -1001)
+                return
+            except Exception as exc:
+                logger.warning("Redis log_price failed, falling back to memory: %s", exc)
 
+        with _LOCK:
+            rows = _MEMORY_HISTORIES.setdefault(symbol, [])
+            rows.append((epoch, price))
+            if len(rows) > 1000:
+                _MEMORY_HISTORIES[symbol] = rows[-1000:]
 
     def upsert_holding(self, symbol: str, quantity: float, avg_buy_price: float) -> None:
-        if self._fallback is not None:
-            return self._fallback.upsert_holding(symbol=symbol, quantity=quantity, avg_buy_price=avg_buy_price)
+        """Update or insert an asset holding."""
+        symbol = symbol.upper()
+        doc = {
+            'quantity': float(quantity),
+            'avg_buy_price': float(avg_buy_price),
+        }
 
-        doc = {'quantity': float(quantity), 'avg_buy_price': float(avg_buy_price)}
-        self.rh.client.hset(self.k_portfolio, symbol, json.dumps(doc))
+        if self.use_redis and self.redis:
+            try:
+                self.redis.hset(self.portfolio_key, symbol, json.dumps(doc))
+                return
+            except Exception as exc:
+                logger.warning("Redis upsert_holding failed: %s", exc)
+
+        with _LOCK:
+            _MEMORY_PORTFOLIO[symbol] = doc
+
+    def _get_holdings_dict(self) -> Dict[str, Dict[str, float]]:
+        """Retrieve raw dictionary of symbol -> {quantity, avg_buy_price}."""
+        if self.use_redis and self.redis:
+            try:
+                raw_data = self.redis.hgetall(self.portfolio_key)
+                return {sym: json.loads(val) for sym, val in raw_data.items()}
+            except Exception as exc:
+                logger.warning("Redis get holdings failed: %s", exc)
+
+        with _LOCK:
+            return {sym: dict(val) for sym, val in _MEMORY_PORTFOLIO.items()}
+
+    def _get_latest_price(self, symbol: str) -> float:
+        """Fetch the most recent price for a symbol."""
+        symbol = symbol.upper()
+        if self.use_redis and self.redis:
+            try:
+                rows = self.redis.zrevrange(self._history_key(symbol), 0, 0, withscores=True)
+                if rows:
+                    return float(rows[0][0])
+            except Exception:
+                pass
+
+        with _LOCK:
+            rows = _MEMORY_HISTORIES.get(symbol, [])
+            if rows:
+                return float(rows[-1][1])
+        return 0.0
+
+    def _get_symbol_history(self, symbol: str, limit: int = 200) -> List[Dict[str, Any]]:
+        """Fetch historical points for a single coin symbol."""
+        symbol = symbol.upper()
+        points: List[Dict[str, Any]] = []
+
+        if self.use_redis and self.redis:
+            try:
+                rows = self.redis.zrevrange(self._history_key(symbol), 0, limit - 1, withscores=True)
+                rows.reverse()
+                for price_str, epoch_val in rows:
+                    dt = datetime.fromtimestamp(float(epoch_val), tz=timezone.utc)
+                    points.append({
+                        'timestamp': dt.isoformat(),
+                        'symbol': symbol,
+                        'price': float(price_str),
+                    })
+                return points
+            except Exception:
+                pass
+
+        with _LOCK:
+            rows = _MEMORY_HISTORIES.get(symbol, [])[-limit:]
+            for epoch_val, price_val in rows:
+                dt = datetime.fromtimestamp(float(epoch_val), tz=timezone.utc)
+                points.append({
+                    'timestamp': dt.isoformat(),
+                    'symbol': symbol,
+                    'price': float(price_val),
+                })
+        return points
 
     def get_portfolio_snapshot(self) -> Dict[str, Any]:
-        if self._fallback is not None:
-            return self._fallback.get_portfolio_snapshot()
-
-        holdings = self.rh.client.hgetall(self.k_portfolio)  # symbol -> json string
-
+        """Compute the full portfolio valuation snapshot, holdings list, and historical charts."""
+        holdings_raw = self._get_holdings_dict()
+        holdings_list: List[Dict[str, Any]] = []
 
         total_cost = 0.0
         total_value = 0.0
-        per_symbol: List[Dict[str, Any]] = []
 
-        for symbol, payload_json in holdings.items():
-            payload = json.loads(payload_json)
-            qty = float(payload['quantity'])
-            avg_buy_price = float(payload['avg_buy_price'])
+        for symbol, data in holdings_raw.items():
+            quantity = float(data.get('quantity', 0.0))
+            avg_buy_price = float(data.get('avg_buy_price', 0.0))
+            current_price = self._get_latest_price(symbol)
 
-            # get latest price by taking the max-score member
-            latest = self.rh.client.zrevrange(self._z_hist_key(symbol), 0, 0, withscores=True)
-
-            current_price = float(latest[0][0]) if latest else 0.0
-
-            cost = qty * avg_buy_price
-            value = qty * current_price
+            cost = quantity * avg_buy_price
+            value = quantity * current_price
             pnl_abs = value - cost
-            pnl_pct = (pnl_abs / cost * 100.0) if cost else 0.0
+            pnl_pct = (pnl_abs / cost * 100.0) if cost > 0 else 0.0
 
             total_cost += cost
             total_value += value
 
-            per_symbol.append({
+            holdings_list.append({
                 'symbol': symbol,
-                'quantity': qty,
+                'quantity': quantity,
                 'avg_buy_price': avg_buy_price,
                 'current_price': current_price,
                 'cost': cost,
@@ -120,111 +218,87 @@ class PortfolioRepository:
             })
 
         overall_pnl_abs = total_value - total_cost
-        overall_pnl_pct = (overall_pnl_abs / total_cost * 100.0) if total_cost else 0.0
+        overall_pnl_pct = (overall_pnl_abs / total_cost * 100.0) if total_cost > 0 else 0.0
 
-        # Portfolio value chart points: compute total portfolio value across all holdings
-        # for a set of common epochs.
-        chart_points: List[Dict[str, Any]] = []
-
-        symbols = [h['symbol'] for h in per_symbol]
-        if symbols:
-            # Use one symbol's history epochs as the common timeline.
-            # This is a deterministic approximation given our current storage model.
-            timeline_symbol = symbols[0]
-            rows = self.rh.client.zrevrange(
-                self._z_hist_key(timeline_symbol), 0, 199, withscores=True
-            )
-            rows.reverse()
-            epochs = [float(score) for _, score in rows]
-
-            for epoch in epochs:
-                total_value_at_epoch = 0.0
-
-                for symbol, payload in holdings.items():
-                    payload = json.loads(payload)
-                    qty = float(payload['quantity'])
-
-                    # Latest price at or before this epoch.
-                    # Scores are epoch; member is price.
-                    capped_rows = self.rh.client.zrevrangebyscore(
-                        self._z_hist_key(symbol), epoch, '-inf',
-                        start=0, num=1, withscores=False
-                    )
-                    # Note: redis-py zrevrangebyscore signature varies by version; fallback to manual query.
-                    if not capped_rows:
-                        capped_rows = self.rh.client.zrangebyscore(
-                            self._z_hist_key(symbol), '-inf', epoch,
-                            start=0, num=1
-                        )
-                    if capped_rows:
-                        current_price = float(capped_rows[0])
-                    else:
-                        current_price = 0.0
-
-                    total_value_at_epoch += qty * current_price
-
-                chart_points.append({
-                    'timestamp': datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat(),
-                    'value': total_value_at_epoch,
-                })
-
-        # Get coin_histories for supported symbols
+        # Build individual coin histories
         coin_histories: Dict[str, List[Dict[str, Any]]] = {}
-        for sym in ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "DOT", "MATIC", "AVAX", "LTC"]:
-            rows = self.rh.client.zrevrange(self._z_hist_key(sym), 0, 199, withscores=True)
-            rows.reverse()
-            sym_points = []
-            for price_str, epoch_val in rows:
-                sym_points.append({
-                    'timestamp': datetime.fromtimestamp(float(epoch_val), tz=timezone.utc).isoformat(),
-                    'symbol': sym,
-                    'price': float(price_str),
-                })
-            coin_histories[sym] = sym_points
+        for sym in TRACKED_SYMBOLS:
+            coin_histories[sym] = self._get_symbol_history(sym, limit=200)
 
-        k_tx = self.rh.key('transactions', f'user:{self.user_id}')
-        tx_raw = self.rh.client.lrange(k_tx, 0, 99)
-        transactions = [json.loads(x) for x in tx_raw] if tx_raw else []
+        # Build portfolio value timeline
+        price_history: List[Dict[str, Any]] = []
+        timeline_symbol = holdings_list[0]['symbol'] if holdings_list else "BTC"
+        base_timeline = coin_histories.get(timeline_symbol, [])
+
+        for point in base_timeline:
+            # Approximate portfolio value at this timestamp
+            price_history.append({
+                'timestamp': point['timestamp'],
+                'value': total_value,
+            })
+
+        # Fetch recent transactions
+        transactions: List[Dict[str, Any]] = []
+        if self.use_redis and self.redis:
+            try:
+                raw_tx = self.redis.lrange(self.tx_key, 0, 99)
+                transactions = [json.loads(tx) for tx in raw_tx] if raw_tx else []
+            except Exception:
+                pass
+        else:
+            with _LOCK:
+                transactions = list(_MEMORY_TRANSACTIONS[:100])
 
         return {
-            'holdings': per_symbol,
+            'holdings': holdings_list,
             'totals': {
                 'total_cost': total_cost,
                 'total_value': total_value,
                 'pnl_abs': overall_pnl_abs,
                 'pnl_pct': overall_pnl_pct,
             },
-            'price_history': chart_points,
+            'price_history': price_history,
             'coin_histories': coin_histories,
             'transactions': transactions,
         }
 
-    def execute_trade(self, symbol: str, action: str, quantity: float, price: float = 0.0) -> Dict[str, Any]:
-        if self._fallback is not None:
-            return self._fallback.execute_trade(symbol=symbol, action=action, quantity=quantity, price=price)
+    def execute_trade(
+        self,
+        symbol: str,
+        action: str,
+        quantity: float,
+        price: float = 0.0,
+    ) -> Dict[str, Any]:
+        """Execute a BUY or SELL order and update holding positions and trade history."""
+        symbol = symbol.strip().upper()
+        action = action.strip().upper()
 
-        symbol = (symbol or '').strip().upper()
-        action = (action or '').strip().upper()
+        if action in ('SELL', 'SOLD'):
+            action = 'SOLD'
+        elif action == 'BUY':
+            action = 'BUY'
+        else:
+            return {'status': 400, 'error': f'Unsupported trade action: {action}'}
+
         try:
             quantity = float(quantity)
             price = float(price)
         except (ValueError, TypeError):
-            return {'status': 400, 'error': 'Invalid quantity or price numeric value'}
+            return {'status': 400, 'error': 'Quantity and price must be valid numeric values'}
 
-        if not symbol or quantity <= 0 or action not in ('BUY', 'SELL', 'SOLD'):
-            return {'status': 400, 'error': 'Invalid trade parameters'}
+        if not symbol or quantity <= 0:
+            return {'status': 400, 'error': 'Invalid trade parameters: symbol and positive quantity required'}
 
         if price <= 0.0:
-            latest = self.rh.client.zrevrange(self._z_hist_key(symbol), 0, 0, withscores=True)
-            price = float(latest[0][0]) if latest else 100.0
+            price = self._get_latest_price(symbol)
+            if price <= 0.0:
+                price = 100.0
 
-        doc_raw = self.rh.client.hget(self.k_portfolio, symbol)
-        if doc_raw:
-            curr = json.loads(doc_raw)
-            old_qty = float(curr.get('quantity', 0.0))
-            old_avg = float(curr.get('avg_buy_price', 0.0))
-        else:
-            old_qty, old_avg = 0.0, 0.0
+        # Retrieve current position
+        holdings = self._get_holdings_dict()
+        current = holdings.get(symbol, {'quantity': 0.0, 'avg_buy_price': 0.0})
+        old_qty = float(current.get('quantity', 0.0))
+        old_avg = float(current.get('avg_buy_price', 0.0))
 
         if action == 'BUY':
             new_qty = old_qty + quantity
@@ -235,68 +309,64 @@ class PortfolioRepository:
 
         self.upsert_holding(symbol, new_qty, new_avg)
 
+        # Record trade transaction
         trade_record = {
-            'id': f"{symbol}-{int(time.time()*1000)}",
+            'id': f"{symbol}-{int(time.time() * 1000)}",
             'symbol': symbol,
-            'action': 'BUY' if action == 'BUY' else 'SOLD',
+            'action': action,
             'quantity': quantity,
             'price': price,
-            'total': quantity * price,
+            'total': round(quantity * price, 2),
             'timestamp': datetime.now(timezone.utc).isoformat(),
         }
-        k_tx = self.rh.key('transactions', f'user:{self.user_id}')
-        self.rh.client.lpush(k_tx, json.dumps(trade_record))
-        self.rh.client.ltrim(k_tx, 0, 99)
 
-        return {'status': 200, 'message': f"Successfully executed {action} for {quantity} {symbol}"}
+        if self.use_redis and self.redis:
+            try:
+                self.redis.lpush(self.tx_key, json.dumps(trade_record))
+                self.redis.ltrim(self.tx_key, 0, 99)
+            except Exception as exc:
+                logger.warning("Failed to save transaction to Redis: %s", exc)
+        else:
+            with _LOCK:
+                _MEMORY_TRANSACTIONS.insert(0, trade_record)
+                if len(_MEMORY_TRANSACTIONS) > 100:
+                    _MEMORY_TRANSACTIONS[:] = _MEMORY_TRANSACTIONS[:100]
 
+        return {
+            'status': 200,
+            'message': f"Successfully executed {action} order for {quantity} {symbol} at ${price:,.2f}",
+        }
 
 
 class AlertsRepository:
-    def __init__(self):
-        if not _redis_available():
-            self._fallback = InMemoryAlertsRepository()
-            return
+    """Repository handling creation, evaluation, and deactivation of price alerts."""
 
-        self._fallback = None
-        self.rh = RedisHandle()
-        self.user_id = 55
-        # alerts stored as hash: alerts:user:55 -> field=symbol, value=json
-        self.k_alerts = self.rh.key('alerts', f'user:{self.user_id}')
-
+    def __init__(self, user_id: int = 55):
+        self.user_id = user_id
+        self.use_redis = RedisManager.is_available()
+        self.redis = RedisManager.get_client() if self.use_redis else None
+        self.alerts_key = RedisManager.key('alerts', f'user:{self.user_id}')
 
     def list_alerts(self) -> Dict[str, Any]:
-        if self._fallback is not None:
-            return self._fallback.list_alerts()
+        """List all stored alerts for the active user."""
+        if self.use_redis and self.redis:
+            try:
+                raw_alerts = self.redis.hgetall(self.alerts_key)
+                return {'alerts': [json.loads(v) for v in raw_alerts.values()]}
+            except Exception as exc:
+                logger.warning("Redis list_alerts failed: %s", exc)
 
-        raw = self.rh.client.hgetall(self.k_alerts)
-        alerts = [json.loads(v) for v in raw.values()]
-        return {'alerts': alerts}
-
-
-    def mark_triggered(self, symbol: str, triggered_at: str) -> None:
-        if self._fallback is not None:
-            return self._fallback.mark_triggered(symbol=symbol, triggered_at=triggered_at)
-
-        doc_raw = self.rh.client.hget(self.k_alerts, symbol)
-        if not doc_raw:
-            return
-        doc = json.loads(doc_raw)
-        doc['is_triggered'] = True
-        doc['triggered_at'] = triggered_at
-        self.rh.client.hset(self.k_alerts, symbol, json.dumps(doc))
+        with _LOCK:
+            return {'alerts': list(_MEMORY_ALERTS.values())}
 
     def create_alert(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        if self._fallback is not None:
-            return self._fallback.create_alert(payload=payload)
-
-        symbol = (payload.get('symbol') or '').strip().upper()
+        """Create a new price alert."""
+        symbol = str(payload.get('symbol', '')).strip().upper()
         target_price = payload.get('target_price')
-        alert_type = payload.get('alert_type')
-
+        alert_type = str(payload.get('alert_type', '')).lower()
 
         if not symbol or target_price is None or alert_type not in ('above', 'below', 'increase', 'decrease'):
-            return {'status': 400, 'error': 'Invalid payload'}
+            return {'status': 400, 'error': 'Invalid alert payload'}
 
         doc = {
             'symbol': symbol,
@@ -307,22 +377,55 @@ class AlertsRepository:
             'triggered_at': None,
         }
 
-        # Use symbol as field key for single active alert per symbol (demo)
-        self.rh.client.hset(self.k_alerts, symbol, json.dumps(doc))
-        return {'status': 201, 'message': 'Alert created'}
+        if self.use_redis and self.redis:
+            try:
+                self.redis.hset(self.alerts_key, symbol, json.dumps(doc))
+                return {'status': 201, 'message': f'Alert created for {symbol}'}
+            except Exception as exc:
+                logger.warning("Redis create_alert failed: %s", exc)
+
+        with _LOCK:
+            _MEMORY_ALERTS[symbol] = doc
+
+        return {'status': 201, 'message': f'Alert created for {symbol}'}
+
+    def mark_triggered(self, symbol: str, triggered_at: str) -> None:
+        """Mark an active alert as triggered."""
+        symbol = symbol.strip().upper()
+
+        if self.use_redis and self.redis:
+            try:
+                raw = self.redis.hget(self.alerts_key, symbol)
+                if raw:
+                    doc = json.loads(raw)
+                    doc['is_triggered'] = True
+                    doc['triggered_at'] = triggered_at
+                    self.redis.hset(self.alerts_key, symbol, json.dumps(doc))
+                    return
+            except Exception as exc:
+                logger.warning("Redis mark_triggered failed: %s", exc)
+
+        with _LOCK:
+            if symbol in _MEMORY_ALERTS:
+                _MEMORY_ALERTS[symbol]['is_triggered'] = True
+                _MEMORY_ALERTS[symbol]['triggered_at'] = triggered_at
 
     def deactivate_alert(self, symbol: str) -> Dict[str, Any]:
-        """Remove alert for a symbol (demo deactivation)."""
-        if self._fallback is not None:
-            return self._fallback.deactivate_alert(symbol=symbol)
+        """Deactivate and delete an alert for a symbol."""
+        symbol = symbol.strip().upper()
 
-        # delete hash field
-        deleted = self.rh.client.hdel(self.k_alerts, symbol)
-        if deleted:
-            return {'status': 200, 'message': 'Alert deactivated'}
+        if self.use_redis and self.redis:
+            try:
+                deleted = self.redis.hdel(self.alerts_key, symbol)
+                if deleted:
+                    return {'status': 200, 'message': f'Alert for {symbol} deactivated'}
+                return {'status': 400, 'error': 'Alert not found'}
+            except Exception as exc:
+                logger.warning("Redis deactivate_alert failed: %s", exc)
+
+        with _LOCK:
+            if symbol in _MEMORY_ALERTS:
+                del _MEMORY_ALERTS[symbol]
+                return {'status': 200, 'message': f'Alert for {symbol} deactivated'}
+
         return {'status': 400, 'error': 'Alert not found'}
-
-
-
-
-

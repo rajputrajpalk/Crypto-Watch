@@ -1,98 +1,100 @@
 # CryptoWatch
 
-A small Django + DRF app that tracks mock crypto prices, manages a demo portfolio, and triggers price alerts via a background price engine.
+A real-time cryptocurrency portfolio tracker, trading simulator, and price alert monitoring system built with **Django 5.x**, **Django REST Framework (DRF)**, and **Redis**.
 
-## Prerequisites
-- Python 3.10+ recommended (tested here with 3.13)
-- Redis (optional but recommended for full functionality)
+---
 
-## Setup
+## Key Features
+
+- **Portfolio Valuation & P&L**: Tracks holdings, calculates weighted average buy prices, current market values, and net profit/loss in real-time.
+- **Interactive Timeseries Visualizer**: Interactive Chart.js charts with duration controls, individual coin filters, and bullish/bearish trend indicators.
+- **Instant Order Simulation**: Place simulated `BUY` and `SELL` market orders with instant portfolio balance updates.
+- **Background Price Engine**: Asynchronous worker thread that continuously generates simulated market price drift and evaluates price threshold alerts without blocking web requests.
+- **Resilient Dual Storage Architecture**: Seamlessly uses **Redis** (Hashes, Sorted Sets, Lists) for high-performance state, with an automatic, thread-safe in-memory fallback when Redis is offline.
+
+---
+
+## Quickstart
+
+### 1. Prerequisites
+- Python 3.10+ (tested on Python 3.13)
+- Redis (optional, automatically falls back to in-memory store if not installed)
+
+### 2. Installation
 ```bash
-# 1) Create venv
+# Clone repository
+git clone https://github.com/rajputrajpalk/Crypto-Watch.git
+cd Crypto-Watch
+
+# Create and activate virtual environment
 python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# 2) Activate
-.venv\Scripts\activate
-
-# 3) Install deps
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-## Redis (recommended)
-If Redis is running locally:
-- Host: `localhost`
-- Port: `6379`
-
-Start Redis (Windows):
-- Install Redis, then run `redis-server`.
-
-If Redis is NOT running:
-- The server will still start, but portfolio/alerts may be empty because Redis-backed repositories will fall back to in-memory.
-
-## Run (manual)
-
-### 1) Start Redis (optional)
-This app will **run even if Redis is not running**, but Redis-backed repositories will fall back to in-memory state.
-
-If you want the “real” Redis storage behavior:
-- Windows: start `redis-server` (after installing Redis).
-- Default host/port used by the app:
-  - `localhost:6379`
-
-### 2) Run migrations
+### 3. Run Migrations & Start Server
 ```bash
+# Apply Django migrations
 python manage.py migrate
-```
 
-### 3) Start the server
-```bash
+# Start development server
 python manage.py runserver
 ```
 
-### 4) Open the UI
-- Dashboard: http://127.0.0.1:8000/
+Open your browser at `http://127.0.0.1:8000/` to access the trading terminal.
 
-The dashboard shows:
-- Portfolio totals and holdings
-- A chart (portfolio value chart currently uses `price_history` returned by the backend)
-- Active alerts + a form to create alerts
+---
 
-### 5) Use the API endpoints (useful for debugging)
-Base path is your server URL (example: `http://127.0.0.1:8000/`).
+## REST API Reference
 
-- **GET** `/api/portfolio/`
-  - Returns portfolio snapshot:
-    - `holdings[]`
-    - `totals`
-    - `price_history[]`
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/portfolio/` | Returns portfolio totals, holdings, price history, and recent transactions |
+| `POST` | `/api/trade/` | Executes a `BUY` or `SELL` order (`symbol`, `action`, `quantity`, `price`) |
+| `GET` | `/api/alerts/` | Lists all active and triggered price alerts |
+| `POST` | `/api/alerts/create/` | Creates a price threshold alert (`symbol`, `target_price`, `alert_type`) |
+| `POST` | `/api/alerts/deactivate/` | Dismisses/removes an alert (`symbol`) |
+| `GET` | `/api/live-prices/` | Fetches the latest simulated price tick across all tracked coins |
 
-- **GET** `/api/alerts/`
-  - Returns list of alerts:
-    - `alerts[]`
+---
 
-- **POST** `/api/alerts/create/`
-  - Create an alert.
-  - Content-Type: `application/json`
-  - Example payload:
-    ```json
-    {
-      "symbol": "BTC",
-      "target_price": 65000,
-      "alert_type": "above"
-    }
-    ```
+## Running Tests
 
-## Project behavior (what is running)
-- On Django startup, `core/apps.py` starts a **background price engine thread**.
-- The engine periodically:
-  1) Reads mock prices from `mock_prices.json`
-  2) Logs per-symbol price history (Redis ZSET when available, otherwise in-memory)
-  3) Checks alerts and marks them as triggered when thresholds are crossed
+Run the test suite with Django's test runner:
+```bash
+python manage.py test
+```
 
-## Notes / limitations
-- This is a demo architecture (no authentication/authorization).
-- Current implementation stores demo state for a single user id (`user_id=55`).
-- The app state is backed by Redis (when available) with an in-memory fallback.
-- Production would require proper user auth and more robust persistence/testing.
+---
 
+## Project Structure
 
+```
+CryptoWatch/
+├── CryptoWatch/         # Django project settings and root routing
+├── core/                # Main application package
+│   ├── domain/          # Domain entities, value objects, and custom exceptions
+│   ├── templates/       # Terminal dashboard UI template
+│   ├── api.py           # REST API endpoints (DRF APIViews)
+│   ├── apps.py          # App configuration and worker lifecycle
+│   ├── forms.py         # Form validation
+│   ├── mock_feed.py     # Simulated price feed provider
+│   ├── price_engine.py  # Asynchronous background worker
+│   ├── repositories.py  # Unified Redis & In-Memory repository layer
+│   ├── serializers.py   # DRF request & response serializers
+│   ├── tests.py         # Unit & integration test suite
+│   ├── urls.py          # Application URL configuration
+│   ├── validators.py    # Input sanitation and validation helpers
+│   └── views.py         # Server-rendered frontend views
+├── static/              # Stylesheets and frontend assets
+├── mock_prices.json     # Base pricing configuration
+├── requirements.txt     # Python package dependencies
+└── manage.py            # Django CLI management entrypoint
+```
+
+---
+
+## License
+MIT

@@ -1,48 +1,43 @@
-from __future__ import annotations
-
 import json
+import logging
+import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict
 
 from .domain.exceptions import UnknownCoinSymbolError
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class MockPriceFeed:
-    """Produces dynamic mock prices.
-
-    Base prices are loaded from mock_prices.json, then each call perturbs them with
-    a small deterministic-random factor so values change frequently.
-    """
+    """Generates simulated live cryptocurrency prices with realistic market volatility."""
 
     json_path: Path
 
     def read_prices(self) -> Dict[str, float]:
-        base_raw = json.loads(self.json_path.read_text(encoding='utf-8'))
-        base = {k: float(v) for k, v in base_raw.items()}
+        """Read base asset prices and apply dynamic market drift."""
+        try:
+            raw_text = self.json_path.read_text(encoding='utf-8')
+            base_prices: Dict[str, float] = json.loads(raw_text)
+        except Exception as exc:
+            logger.error("Failed to read price feed from %s: %s", self.json_path, exc)
+            return {}
 
-        # Perturb each symbol slightly so the dashboard shows changing prices.
-        # We use a high-resolution time seed so values change on frequent calls.
-        import random
-        import time
+        prices: Dict[str, float] = {}
+        for symbol, base_val in base_prices.items():
+            base = float(base_val)
+            # Apply ±1.2% random drift per tick for realistic movement
+            drift_factor = 1.0 + random.uniform(-0.012, 0.012)
+            prices[symbol] = round(max(0.0001, base * drift_factor), 4)
 
-        seed = time.time_ns()
-        rnd = random.Random(seed)
-
-
-        out: Dict[str, float] = {}
-        for sym, price in base.items():
-            # ±1% move per tick
-            drift = rnd.uniform(-0.01, 0.01)
-            out[sym] = float(max(0.0, price * (1.0 + drift)))
-
-        return out
+        return prices
 
     def get_price(self, symbol: str) -> float:
+        """Retrieve the live price of a specific cryptocurrency."""
+        symbol = symbol.strip().upper()
         prices = self.read_prices()
         if symbol not in prices:
             raise UnknownCoinSymbolError(symbol)
-        return float(prices[symbol])
-
-
+        return prices[symbol]

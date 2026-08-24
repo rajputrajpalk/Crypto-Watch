@@ -1,56 +1,56 @@
-from __future__ import annotations
-
-import re
-from typing import Dict
-
 from django import forms
-
-
-COIN_SYMBOL_RE = re.compile(r"^[A-Z]{3,5}$")
-
+from .validators import COIN_SYMBOL_PATTERN
 
 ALERT_TYPE_CHOICES = [
-    ("above", "Above Target Price"),
-    ("below", "Below Target Price / Stop-Loss"),
+    ('above', 'Above Target Price (Take Profit)'),
+    ('below', 'Below Target Price (Stop Loss)'),
+    ('increase', 'Price Increase'),
+    ('decrease', 'Price Decrease'),
 ]
 
 
 class AlertConfigForm(forms.Form):
-    """User-facing alert configuration form with strict sanitization."""
+    """Form for creating price threshold alerts via standard Django views."""
 
     coin_symbol = forms.CharField(
-        label="coin_symbol",
+        label="Coin Symbol",
         max_length=10,
         required=True,
         strip=True,
-        help_text="e.g. BTC, ETH",
+        widget=forms.TextInput(attrs={
+            'placeholder': 'e.g. BTC, ETH',
+            'class': 'form-input',
+        }),
     )
-    target_price = forms.FloatField(label="target_price", required=True, min_value=0.0)
-    alert_type = forms.ChoiceField(choices=ALERT_TYPE_CHOICES, required=True)
+    target_price = forms.FloatField(
+        label="Target Price ($)",
+        required=True,
+        min_value=0.0001,
+        widget=forms.NumberInput(attrs={
+            'placeholder': 'e.g. 68000',
+            'step': 'any',
+            'class': 'form-input',
+        }),
+    )
+    alert_type = forms.ChoiceField(
+        label="Condition",
+        choices=ALERT_TYPE_CHOICES,
+        required=True,
+        widget=forms.Select(attrs={'class': 'form-select'}),
+    )
 
     def clean_coin_symbol(self) -> str:
-        raw = (self.cleaned_data.get("coin_symbol") or "").strip().upper()
+        raw = (self.cleaned_data.get('coin_symbol') or '').strip().upper()
         if not raw:
-            raise forms.ValidationError("coin_symbol is required")
-        if not COIN_SYMBOL_RE.match(raw):
-            raise forms.ValidationError("Invalid coin symbol. Must match ^[A-Z]{3,5}$")
+            raise forms.ValidationError("Coin symbol is required.")
+        if not COIN_SYMBOL_PATTERN.match(raw):
+            raise forms.ValidationError("Invalid symbol. Must be 3-10 uppercase letters.")
         return raw
 
-    def clean_target_price(self) -> float:
-        raw = self.cleaned_data.get("target_price")
-        try:
-            val = float(raw)
-        except (TypeError, ValueError):
-            raise forms.ValidationError("target_price must be a positive number")
-        if val <= 0:
-            raise forms.ValidationError("target_price must be greater than zero")
-        return val
-
-    def to_payload(self) -> Dict[str, object]:
-        """Convert to existing API/repository payload schema."""
+    def to_payload(self) -> dict:
+        """Convert validated form data to repository payload."""
         return {
-            "symbol": self.cleaned_data["coin_symbol"],
-            "target_price": self.cleaned_data["target_price"],
-            "alert_type": self.cleaned_data["alert_type"],
+            'symbol': self.cleaned_data['coin_symbol'],
+            'target_price': self.cleaned_data['target_price'],
+            'alert_type': self.cleaned_data['alert_type'],
         }
-

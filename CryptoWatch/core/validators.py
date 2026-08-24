@@ -1,41 +1,38 @@
-from __future__ import annotations
-
 import re
-from decimal import Decimal
 from typing import Union
 
-
-COIN_SYMBOL_RE = re.compile(r'^[A-Z]{3,5}$')
+COIN_SYMBOL_PATTERN = re.compile(r'^[A-Z]{3,10}$')
 
 
 def validate_symbol(symbol: str) -> str:
+    """Validate and sanitize a cryptocurrency ticker symbol (e.g., BTC, ETH, SOL)."""
     if not isinstance(symbol, str):
-        raise ValueError('symbol must be a string')
-    symbol = symbol.strip().upper()
-    if not COIN_SYMBOL_RE.match(symbol):
-        raise ValueError('Invalid coin symbol. Must match ^[A-Z]{3,5}$')
-    return symbol
+        raise ValueError("Symbol must be a valid string")
+    cleaned = symbol.strip().upper()
+    if not COIN_SYMBOL_PATTERN.match(cleaned):
+        raise ValueError(f"Invalid coin symbol '{cleaned}'. Must be 3-10 uppercase letters.")
+    return cleaned
 
 
-def validate_positive_quantity(qty: Union[int, float, str]) -> float:
-    # Accept ints/floats/strings that parse to positive numbers.
+def validate_positive_quantity(quantity: Union[int, float, str]) -> float:
+    """Validate that the quantity is a positive number greater than zero."""
     try:
-        val = float(qty)
+        val = float(quantity)
     except (TypeError, ValueError):
-        raise ValueError('quantity must be a positive number')
+        raise ValueError("Quantity must be a valid numeric value")
 
     if val <= 0:
-        raise ValueError('quantity must be > 0')
+        raise ValueError("Quantity must be strictly greater than 0")
     return val
 
 
 def validate_positive_price(price: Union[int, float, str]) -> float:
+    """Validate that the price is a positive number greater than zero."""
     try:
         val = float(price)
     except (TypeError, ValueError):
-        raise ValueError('price must be a positive number')
+        raise ValueError("Price must be a valid numeric value")
 
     if val <= 0:
-        raise ValueError('price must be > 0')
+        raise ValueError("Price must be strictly greater than 0")
     return val
-
